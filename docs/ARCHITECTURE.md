@@ -132,7 +132,7 @@ The managed-agent research slice is `services/managed_research`. It invokes Gemi
 Forge supports two project modes:
 
 - Connected product: an existing product with repo, feedback, issues, competitors, analytics summaries, or public search topics.
-- New product or sample project: a theme, audience, manual idea, or generated sample context that Forge can research and prototype from.
+- New product: a theme, audience, or manual idea that Forge can research and prototype from.
 
 Triggers are stored rules that decide when Forge should run. A trigger may be manual, scheduled, source-volume based, sentiment based, competitor-change based, or release-follow-up based. The trigger service invokes Forge runs; managed sandboxes are persistent execution environments when reused, not always-on workers.
 
@@ -198,7 +198,7 @@ Realtime should be added only where the dashboard actually needs live updates. S
 
 The dashboard should:
 
-- Create or edit connected-product and new-product/sample projects.
+- Create or edit connected-product and new-product projects.
 - Configure sources and triggers.
 - Render and edit the explicit preference profile.
 - Render ranked opportunities with evidence, taste critique, Bull/Bear summaries, and Decision Agent recommendations.

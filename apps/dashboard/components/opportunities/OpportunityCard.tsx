@@ -19,7 +19,6 @@ export function OpportunityCard({ opportunity, projectId }: OpportunityCardProps
       <div className="card-accent" aria-hidden="true" />
 
       <div className="card-body">
-        <p className="card-rank">{opportunity.score}</p>
         <h2 className="card-title">{opportunity.title}</h2>
         <p className="card-summary">{opportunity.decision.summary}</p>
       </div>

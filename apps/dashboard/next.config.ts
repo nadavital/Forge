@@ -3,6 +3,7 @@ import path from "node:path";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  devIndicators: false,
   // Monorepo root for module resolution (pnpm workspace).
   turbopack: {
     root: path.resolve(__dirname, "../..")

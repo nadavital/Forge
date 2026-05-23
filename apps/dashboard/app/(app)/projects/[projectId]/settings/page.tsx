@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
 import { ProjectHeader } from "@/components/projects/ProjectHeader";
+import { SchedulerControl } from "@/components/projects/SchedulerControl";
 import { ProjectSettingsForm } from "@/components/settings/ProjectSettingsForm";
 import { ReflectionPanel } from "@/components/settings/ReflectionPanel";
-import { loadDashboardProject, loadProjectSettings } from "@/lib/dashboard-data";
+import { loadDashboardProject, loadProjectSettings, loadSchedulerOverview } from "@/lib/dashboard-data";
 import { loadReflectionProposals } from "@/lib/forge-data";
 
 export const dynamic = "force-dynamic";
@@ -15,10 +16,11 @@ type ProjectSettingsPageProps = {
 export default async function ProjectSettingsPage({ params, searchParams }: ProjectSettingsPageProps) {
   const { projectId } = await params;
   const { welcome } = await searchParams;
-  const [project, settings, proposals] = await Promise.all([
+  const [project, settings, proposals, scheduler] = await Promise.all([
     loadDashboardProject(projectId),
     loadProjectSettings(projectId),
-    loadReflectionProposals(projectId)
+    loadReflectionProposals(projectId),
+    loadSchedulerOverview(projectId)
   ]);
 
   if (!project || !settings) {
@@ -41,6 +43,7 @@ export default async function ProjectSettingsPage({ params, searchParams }: Proj
       ) : null}
 
       <div className="settings-stack">
+        <SchedulerControl overview={scheduler} projectId={project.id} />
         <ProjectSettingsForm projectId={project.id} settings={settings} />
         <ReflectionPanel projectId={project.id} proposals={proposals} />
       </div>

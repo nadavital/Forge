@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Plus, Settings2 } from "lucide-react";
+import { Plus } from "lucide-react";
 import { plural } from "@/lib/decision";
 import { useProjects } from "@/lib/projects-context";
 
@@ -51,15 +51,6 @@ export function AppSidebar() {
             );
           })}
         </ul>
-      </nav>
-
-      <div className="sidebar-spacer" />
-
-      <nav className="sidebar-footer" aria-label="Workspace settings">
-        <Link className={pathname === "/settings" ? "footer-link active" : "footer-link"} href="/settings">
-          <Settings2 aria-hidden="true" />
-          Forge settings
-        </Link>
       </nav>
     </aside>
   );

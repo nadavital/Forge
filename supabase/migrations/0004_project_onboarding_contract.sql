@@ -9,7 +9,7 @@ alter table public.projects
 
 alter table public.projects
   add constraint projects_mode_check
-  check (mode in ('connected_product', 'new_product', 'sample_project', 'new_project', 'existing_project'));
+  check (mode in ('connected_product', 'new_product'));
 
 alter table public.projects
   alter column description drop not null;

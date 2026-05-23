@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { archiveProjectRecord, createProjectRecord } from "@/lib/db/repository";
 import { triggerProjectPipeline } from "@/lib/pipeline";
+import { normalizeGithubRepository } from "@/lib/project-onboarding";
 import type { ProjectMode } from "@/types/forge";
 
 type CreateProjectInput = {
@@ -18,13 +19,18 @@ type CreateProjectInput = {
 };
 
 export async function createProject(input: CreateProjectInput) {
-  const { name, mode } = input;
+  const { name } = input;
   const trimmed = name.trim();
   if (!trimmed) {
     return { ok: false as const, message: "Give the project a name." };
   }
 
   const cleanedRepoUrl = input.repoUrl?.trim();
+  const mode: ProjectMode = cleanedRepoUrl ? "connected_product" : "new_product";
+  if (cleanedRepoUrl && !normalizeGithubRepository(cleanedRepoUrl)) {
+    return { ok: false as const, message: "Use a GitHub repository URL like https://github.com/org/repo." };
+  }
+
   const project = await createProjectRecord({
     name: trimmed,
     mode,
@@ -36,19 +42,13 @@ export async function createProject(input: CreateProjectInput) {
     notes: input.notes
   });
 
-  if (mode === "connected_product" && cleanedRepoUrl) {
-    await triggerProjectPipeline(project.id);
-  }
+  await triggerProjectPipeline(project.id);
 
   revalidatePath("/");
   revalidatePath(`/projects/${project.id}`);
   revalidatePath(`/projects/${project.id}/settings`);
 
-  redirect(
-    mode === "connected_product" && cleanedRepoUrl
-      ? `/projects/${project.id}`
-      : `/projects/${project.id}/settings?welcome=1`
-  );
+  redirect(`/projects/${project.id}`);
 }
 
 export async function archiveProject(projectId: string) {

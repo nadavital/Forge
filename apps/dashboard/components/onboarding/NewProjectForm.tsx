@@ -1,45 +1,19 @@
 "use client";
 
 import { useTransition } from "react";
-import { FlaskConical, GitBranch, Link2, Sparkles } from "lucide-react";
+import { GitBranch } from "lucide-react";
 import { createProject } from "@/app/actions/project";
-import type { ProjectMode } from "@/types/forge";
-
-const modes: Array<{
-  id: ProjectMode;
-  title: string;
-  description: string;
-  icon: typeof Link2;
-}> = [
-  {
-    id: "connected_product",
-    title: "Connected product",
-    description: "Forge watches feedback, issues, and usage from something you already ship.",
-    icon: Link2
-  },
-  {
-    id: "new_product",
-    title: "New product",
-    description: "Start from manual ideas and taste notes while you shape a greenfield concept.",
-    icon: Sparkles
-  },
-  {
-    id: "sample_project",
-    title: "Sample project",
-    description: "Use fixture data to validate Forge without connecting production inputs.",
-    icon: FlaskConical
-  }
-];
 
 export function NewProjectForm() {
   const [isPending, startTransition] = useTransition();
 
   function onSubmit(formData: FormData) {
     startTransition(async () => {
+      const repoUrl = String(formData.get("repoUrl") ?? "");
       await createProject({
         name: String(formData.get("name") ?? ""),
-        mode: formData.get("mode") as ProjectMode,
-        repoUrl: String(formData.get("repoUrl") ?? ""),
+        mode: repoUrl.trim() ? "connected_product" : "new_product",
+        repoUrl,
         productUrl: String(formData.get("productUrl") ?? ""),
         description: String(formData.get("description") ?? ""),
         markets: String(formData.get("markets") ?? ""),
@@ -51,31 +25,6 @@ export function NewProjectForm() {
 
   return (
     <form action={onSubmit} className="onboarding-form">
-      <section className="onboarding-panel">
-        <p className="onboarding-kicker">Start here</p>
-        <h2>What are you building with Forge?</h2>
-        <p className="onboarding-lead">
-          Pick a mode, name the project, then configure sources and taste before the first morning review.
-        </p>
-
-        <div className="mode-grid">
-          {modes.map((mode, index) => (
-            <label className="mode-card" key={mode.id}>
-              <input defaultChecked={index === 0} name="mode" type="radio" value={mode.id} />
-              <span className="mode-card-inner">
-                <span className="mode-icon">
-                  <mode.icon aria-hidden="true" />
-                </span>
-                <span className="mode-copy">
-                  <strong>{mode.title}</strong>
-                  <span>{mode.description}</span>
-                </span>
-              </span>
-            </label>
-          ))}
-        </div>
-      </section>
-
       <section className="onboarding-panel">
         <div className="onboarding-fields">
           <label className="field-label" htmlFor="project-name">
@@ -92,7 +41,7 @@ export function NewProjectForm() {
           />
 
           <label className="field-label" htmlFor="repoUrl">
-            GitHub repository
+            Existing GitHub repository
           </label>
           <div className="field-with-icon">
             <GitBranch aria-hidden="true" />

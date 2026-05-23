@@ -10,8 +10,8 @@ Stores the product workspace Forge is helping create or iterate on.
 | --- | --- | --- |
 | `id` | uuid | Primary key |
 | `user_id` | uuid | Future auth user reference; nullable for single-user v1 |
-| `name` | text | Product or sample project name |
-| `mode` | text | `connected_product`, `new_product`, `sample_project` |
+| `name` | text | Product or project name |
+| `mode` | text | `connected_product`, `new_product` |
 | `stage` | text | `idea`, `prototype`, `launched`, `internal` |
 | `description` | text | Product context summary |
 | `repo_url` | text | Existing product repo when connected |

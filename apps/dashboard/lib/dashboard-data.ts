@@ -1,10 +1,30 @@
 import { loadForgeProject, loadForgeProjects } from "@/lib/forge-data";
-import { getProjectBundle } from "@/lib/db/repository";
+import { getProjectBundle, loadStore } from "@/lib/db/repository";
 import { buildOnboardingChecklist, onboardingStatus } from "@/lib/project-onboarding";
-import type { MorningReviewProject, ProjectSettingsView } from "@/types/forge";
+import { isDueProjectTrigger } from "@/lib/scheduler/demo-scheduler";
+import type { MorningReviewProject, ProjectSettingsView, SchedulerOverview } from "@/types/forge";
 
 export async function loadDashboardProjects() {
   return loadForgeProjects();
+}
+
+export async function loadSchedulerOverview(projectId?: string): Promise<SchedulerOverview> {
+  const store = await loadStore();
+  const scheduleTriggers = store.triggers.filter(
+    (trigger) => trigger.trigger_type !== "manual" && (!projectId || trigger.project_id === projectId)
+  );
+  const active = scheduleTriggers.filter((trigger) => trigger.status === "active");
+  const due = active.filter((trigger) => isDueProjectTrigger(trigger));
+  const lastRunAt = scheduleTriggers
+    .map((trigger) => trigger.last_run_at)
+    .filter((value): value is string => Boolean(value))
+    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0];
+
+  return {
+    activeCount: active.length,
+    dueCount: due.length,
+    lastRunAt
+  };
 }
 
 export async function loadDashboardProject(projectId: string) {
@@ -52,7 +72,8 @@ export async function loadProjectSettings(projectId: string): Promise<ProjectSet
       id: trigger.id,
       name: trigger.name,
       type: trigger.trigger_type,
-      status: trigger.status
+      status: trigger.status,
+      lastRunAt: trigger.last_run_at
     })),
     preferences: {
       riskTolerance: bundle.preferences?.risk_tolerance || "medium",

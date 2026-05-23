@@ -1,7 +1,7 @@
 "use client";
 
 import { useTransition } from "react";
-import { Archive, CheckCircle2, Circle, GitBranch, Save } from "lucide-react";
+import { Archive, GitBranch, Save } from "lucide-react";
 import { archiveProject } from "@/app/actions/project";
 import { saveProjectSettings } from "@/app/actions/settings";
 import type { ProjectSettingsView } from "@/types/forge";
@@ -53,31 +53,10 @@ export function ProjectSettingsForm({ projectId, settings }: ProjectSettingsForm
   return (
     <div className="settings-form">
       <form action={onSubmit} className="settings-form">
-        <section className="settings-card">
-          <h2>Project onboarding</h2>
-          <p className="settings-desc">The minimum setup Forge needs before reviews are worth trusting.</p>
-          <ul className="settings-checklist">
-            {settings.onboarding.checklist.map((item) => (
-              <li key={item.id}>
-                {item.complete ? (
-                  <CheckCircle2 aria-hidden="true" className="check-complete" />
-                ) : (
-                  <Circle aria-hidden="true" className="check-pending" />
-                )}
-                <div>
-                  <strong>{item.label}</strong>
-                  <span>{item.description}</span>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        <section className="settings-card">
-          <h2>Repository connection</h2>
-          <p className="settings-desc">
-            GitHub is stored as project metadata and mirrored into the GitHub source config.
-          </p>
+        <section className="settings-section">
+          <div className="settings-card-header">
+            <h2>Project context</h2>
+          </div>
           <div className="settings-fields">
             <label className="field-label" htmlFor="repoUrl">
               GitHub repository
@@ -112,54 +91,56 @@ export function ProjectSettingsForm({ projectId, settings }: ProjectSettingsForm
               disabled={isPending}
               id="description"
               name="description"
-              rows={4}
+              rows={3}
             />
           </div>
         </section>
 
-        <section className="settings-card">
-          <h2>Sources</h2>
-          <p className="settings-desc">Inputs that feed ranking and research for this project.</p>
-          <ul className="settings-rows editable">
-            {settings.sources.map((source) => (
-              <li key={source.id}>
-                <div>
-                  <strong>{source.name}</strong>
-                  <span>{source.type.replace(/_/g, " ")}</span>
-                </div>
-                <select defaultValue={source.status} disabled={isPending} name={`source-${source.id}`}>
-                  <option value="active">active</option>
-                  <option value="paused">paused</option>
-                  <option value="error">error</option>
-                </select>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <div className="settings-two-col">
+          <section className="settings-section">
+            <h2>Sources</h2>
+            <ul className="settings-rows editable">
+              {settings.sources.map((source) => (
+                <li key={source.id}>
+                  <div>
+                    <strong>{source.name}</strong>
+                    <span>{source.type.replace(/_/g, " ")}</span>
+                  </div>
+                  <select defaultValue={source.status} disabled={isPending} name={`source-${source.id}`}>
+                    <option value="active">active</option>
+                    <option value="paused">paused</option>
+                    <option value="error">error</option>
+                  </select>
+                </li>
+              ))}
+            </ul>
+          </section>
 
-        <section className="settings-card">
-          <h2>Triggers</h2>
-          <p className="settings-desc">When Forge runs for this project.</p>
-          <ul className="settings-rows editable">
-            {settings.triggers.map((trigger) => (
-              <li key={trigger.id}>
-                <div>
-                  <strong>{trigger.name}</strong>
-                  <span>{trigger.type}</span>
-                </div>
-                <select defaultValue={trigger.status} disabled={isPending} name={`trigger-${trigger.id}`}>
-                  <option value="active">active</option>
-                  <option value="paused">paused</option>
-                  <option value="disabled">disabled</option>
-                </select>
-              </li>
-            ))}
-          </ul>
-        </section>
+          <section className="settings-section">
+            <h2>Workflow triggers</h2>
+            <ul className="settings-rows editable">
+              {settings.triggers.map((trigger) => (
+                <li key={trigger.id}>
+                  <div>
+                    <strong>{trigger.name}</strong>
+                    <span>
+                      {trigger.type}
+                      {trigger.lastRunAt ? ` · last run ${formatTime(trigger.lastRunAt)}` : ""}
+                    </span>
+                  </div>
+                  <select defaultValue={trigger.status} disabled={isPending} name={`trigger-${trigger.id}`}>
+                    <option value="active">active</option>
+                    <option value="paused">paused</option>
+                    <option value="disabled">disabled</option>
+                  </select>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </div>
 
-        <section className="settings-card">
+        <section className="settings-section">
           <h2>Preference profile</h2>
-          <p className="settings-desc">Explicit taste used when ranking opportunities.</p>
           <div className="settings-fields">
             <label className="field-label" htmlFor="riskTolerance">
               Risk tolerance
@@ -188,7 +169,7 @@ export function ProjectSettingsForm({ projectId, settings }: ProjectSettingsForm
             <label className="field-label" htmlFor="notes">
               Notes
             </label>
-            <textarea defaultValue={settings.preferences.notes} disabled={isPending} id="notes" name="notes" rows={4} />
+            <textarea defaultValue={settings.preferences.notes} disabled={isPending} id="notes" name="notes" rows={3} />
           </div>
         </section>
 
@@ -198,11 +179,11 @@ export function ProjectSettingsForm({ projectId, settings }: ProjectSettingsForm
         </button>
       </form>
 
-      <section className="settings-card danger-card">
-        <h2>Remove project</h2>
-        <p className="settings-desc">
-          Archive hides this project from active reviews and disables its triggers while preserving its records.
-        </p>
+      <section className="settings-section danger-card">
+        <div>
+          <h2>Remove project</h2>
+          <p className="settings-desc">Hide this project and disable its triggers while preserving its records.</p>
+        </div>
         <button className="btn btn-danger" disabled={isPending} onClick={onArchive} type="button">
           <Archive aria-hidden="true" />
           Archive project
@@ -210,4 +191,10 @@ export function ProjectSettingsForm({ projectId, settings }: ProjectSettingsForm
       </section>
     </div>
   );
+}
+
+function formatTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }

@@ -3,9 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTransition } from "react";
-import { Play } from "lucide-react";
+import { Play, Settings2 } from "lucide-react";
 import { runProjectPipeline } from "@/app/actions/pipeline";
-import { plural } from "@/lib/decision";
 
 type ProjectHeaderProps = {
   projectId: string;
@@ -19,10 +18,7 @@ type ProjectHeaderProps = {
 export function ProjectHeader({
   projectId,
   projectName,
-  mode,
-  runStatus,
-  signalCount,
-  opportunityCount
+  mode
 }: ProjectHeaderProps) {
   const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
@@ -39,14 +35,8 @@ export function ProjectHeader({
     <header className="project-header">
       <div className="project-header-top">
         <div className="project-header-copy">
-          <p className="project-eyebrow">{runStatus}</p>
           <h1>{projectName}</h1>
           <p className="project-subline">{mode}</p>
-          {onReview && signalCount !== undefined && opportunityCount !== undefined ? (
-            <p className="project-stats">
-              {plural(signalCount, "signal")} · {plural(opportunityCount, "opportunity", "opportunities")}
-            </p>
-          ) : null}
         </div>
 
         {onReview ? (
@@ -66,6 +56,7 @@ export function ProjectHeader({
           className="project-tab"
           href={`/projects/${projectId}/settings`}
         >
+          <Settings2 aria-hidden="true" />
           Settings
         </Link>
       </nav>
