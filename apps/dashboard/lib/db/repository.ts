@@ -2,12 +2,15 @@ import { newId, readLocalStore, writeLocalStore } from "@/lib/db/local-db";
 import { createSupabaseClient, isSupabaseConfigured } from "@/lib/db/supabase";
 import type {
   DbBuildArtifact,
+  DbEvaluation,
   DbMvpBuild,
   DbOpportunity,
+  DbOpportunitySignal,
   DbPipelineRun,
   DbPreferenceEvent,
   DbProject,
   DbReflectionProposal,
+  DbSignal,
   DbSourceConfig,
   DbTrigger,
   DbUserPreference,
@@ -77,6 +80,7 @@ async function mutateStore(mutator: (store: ForgeStore) => void): Promise<ForgeS
 export async function createProjectRecord(input: {
   name: string;
   mode: ProjectMode;
+  repoUrl?: string | null;
 }): Promise<DbProject> {
   const now = new Date().toISOString();
   const project: DbProject = {
@@ -84,6 +88,7 @@ export async function createProjectRecord(input: {
     name: input.name.trim(),
     mode: input.mode,
     stage: "idea",
+    repo_url: cleanOptional(input.repoUrl),
     created_at: now,
     updated_at: now
   };
@@ -100,7 +105,8 @@ export async function createProjectRecord(input: {
       project_id: project.id,
       source_type: input.mode === "connected_product" ? "github" : "manual",
       name: input.mode === "connected_product" ? "GitHub issues" : "Manual ideas",
-      status: "active"
+      status: "active",
+      config: input.repoUrl ? { repo_url: cleanOptional(input.repoUrl) } : {}
     });
     store.triggers.push({
       id: newId("trg"),
@@ -117,11 +123,157 @@ export async function createProjectRecord(input: {
       notes:
         input.mode === "connected_product"
           ? "Connect feedback and repo signals before the first scheduled run."
-          : "Start with manual ideas and taste notes until the loop feels right."
+          : "Individual builder profile. Prefer local-first demos, AI/devtool workflows, technical creativity, and MVPs that do not require paid APIs."
     });
   });
 
   return project;
+}
+
+export async function updateProjectRepository(input: {
+  projectId: string;
+  repoUrl: string;
+  productContext?: string;
+}): Promise<void> {
+  const now = new Date().toISOString();
+  const patch = {
+    repo_url: input.repoUrl,
+    description: input.productContext,
+    updated_at: now
+  };
+
+  if (isSupabaseConfigured()) {
+    const supabase = createSupabaseClient()!;
+    await supabase.update("projects", input.projectId, patch);
+    return;
+  }
+
+  await mutateStore((store) => {
+    const project = store.projects.find((row) => row.id === input.projectId);
+    if (project) {
+      project.repo_url = input.repoUrl;
+      project.description = input.productContext ?? project.description;
+      project.updated_at = now;
+    }
+    const source = store.source_configs.find(
+      (row) => row.project_id === input.projectId && row.source_type === "github"
+    );
+    if (source) {
+      source.status = "active";
+      source.config = { ...(source.config ?? {}), repo_url: input.repoUrl };
+    } else {
+      store.source_configs.push({
+        id: newId("src"),
+        project_id: input.projectId,
+        source_type: "github",
+        name: "GitHub issues",
+        status: "active",
+        config: { repo_url: input.repoUrl }
+      });
+    }
+  });
+}
+
+export async function replaceProjectDiscoveryRecords(input: {
+  projectId: string;
+  runId: string;
+  signals: Array<Omit<DbSignal, "id" | "project_id"> & { id?: string }>;
+  opportunities: Array<
+    Omit<DbOpportunity, "id" | "project_id" | "pipeline_run_id"> & {
+      id?: string;
+      signalIndexes: number[];
+      evaluations?: Array<Omit<DbEvaluation, "id" | "opportunity_id">>;
+    }
+  >;
+}): Promise<void> {
+  const now = new Date().toISOString();
+  const signalRows: DbSignal[] = input.signals.map((signal) => ({
+    id: signal.id ?? newId("sig"),
+    project_id: input.projectId,
+    source: signal.source,
+    title: signal.title,
+    body: signal.body,
+    url: signal.url
+  }));
+
+  const opportunityRows: DbOpportunity[] = input.opportunities.map((opportunity) => ({
+    id: opportunity.id ?? newId("opp"),
+    project_id: input.projectId,
+    pipeline_run_id: input.runId,
+    title: opportunity.title,
+    problem: opportunity.problem,
+    target_user: opportunity.target_user,
+    mvp_concept: opportunity.mvp_concept,
+    score: opportunity.score,
+    score_rationale: opportunity.score_rationale,
+    status: opportunity.status ?? "proposed",
+    profile: opportunity.profile,
+    created_at: now,
+    updated_at: now
+  }));
+
+  const links: DbOpportunitySignal[] = input.opportunities.flatMap((opportunity, opportunityIndex) =>
+    opportunity.signalIndexes
+      .map((signalIndex) => signalRows[signalIndex])
+      .filter((signal): signal is DbSignal => Boolean(signal))
+      .map((signal) => ({
+        opportunity_id: opportunityRows[opportunityIndex].id,
+        signal_id: signal.id
+      }))
+  );
+
+  const evaluations: DbEvaluation[] = input.opportunities.flatMap((opportunity, opportunityIndex) =>
+    (opportunity.evaluations ?? []).map((evaluation) => ({
+      id: newId("eval"),
+      opportunity_id: opportunityRows[opportunityIndex].id,
+      evaluator: evaluation.evaluator,
+      content: evaluation.content,
+      scores: evaluation.scores
+    }))
+  );
+
+  if (isSupabaseConfigured()) {
+    const supabase = createSupabaseClient()!;
+    for (const signal of signalRows) await supabase.insert("signals", signal);
+    for (const opportunity of opportunityRows) await supabase.insert("opportunities", opportunity);
+    for (const link of links) await supabase.insert("opportunity_signals", link);
+    for (const evaluation of evaluations) await supabase.insert("opportunity_evaluations", evaluation);
+    return;
+  }
+
+  await mutateStore((store) => {
+    const oldOpportunityIds = new Set(
+      store.opportunities
+        .filter((row) => row.project_id === input.projectId && row.pipeline_run_id)
+        .map((row) => row.id)
+    );
+    const oldSignalIds = new Set(
+      store.signals.filter((row) => row.project_id === input.projectId).map((row) => row.id)
+    );
+
+    store.build_artifacts = store.build_artifacts.filter((artifact) =>
+      store.mvp_builds.some(
+        (build) => build.id === artifact.mvp_build_id && !oldOpportunityIds.has(build.opportunity_id ?? "")
+      )
+    );
+    store.mvp_builds = store.mvp_builds.filter((build) => !oldOpportunityIds.has(build.opportunity_id ?? ""));
+    store.prototype_options = store.prototype_options.filter(
+      (prototype) => !oldOpportunityIds.has(prototype.opportunity_id ?? "")
+    );
+    store.opportunity_evaluations = store.opportunity_evaluations.filter(
+      (evaluation) => !oldOpportunityIds.has(evaluation.opportunity_id ?? "")
+    );
+    store.opportunity_signals = store.opportunity_signals.filter(
+      (link) => !oldOpportunityIds.has(link.opportunity_id) && !oldSignalIds.has(link.signal_id)
+    );
+    store.opportunities = store.opportunities.filter((row) => !oldOpportunityIds.has(row.id));
+    store.signals = store.signals.filter((row) => !oldSignalIds.has(row.id));
+
+    store.signals.unshift(...signalRows);
+    store.opportunities.unshift(...opportunityRows);
+    store.opportunity_signals.unshift(...links);
+    store.opportunity_evaluations.unshift(...evaluations);
+  });
 }
 
 export async function recordPreferenceEvent(input: {
@@ -395,9 +547,19 @@ export async function getForgeSettingsView() {
   const proposals = store.reflection_proposals.filter((row) => row.status === "proposed");
 
   return {
-    builder: isSupabaseConfigured() ? "Supabase-backed simulated adapter" : "Local simulated adapter",
+    builder:
+      process.env.FORGE_BUILDER_ADAPTER === "managed" || process.env.GEMINI_API_KEY
+        ? "Gemini managed builder"
+        : isSupabaseConfigured()
+          ? "Supabase-backed simulated adapter"
+          : "Local simulated adapter",
     humanGate: "Opportunity approval required",
     guardrails: ["Free services only", "Template repo", "PR-ready MVP", "No production deploys"],
     reflectionProposals: proposals
   };
+}
+
+function cleanOptional(value: string | null | undefined): string | null {
+  const text = typeof value === "string" ? value.trim() : "";
+  return text || null;
 }

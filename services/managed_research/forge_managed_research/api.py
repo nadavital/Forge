@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -483,10 +485,13 @@ def _background_build(build_id: str) -> None:
     try:
         build = _expect_one(writer.select("mvp_builds", f"select=*&id=eq.{build_id}"), "build")
         writer.update("mvp_builds", f"id=eq.{build_id}", {"stage": "building"})
-        summary = (
-            "Managed builder prompt prepared. Antigravity PR creation is the next adapter step; "
-            "this record contains the full prompt_context for invocation."
-        )
+        if os.environ.get("FORGE_ENABLE_MANAGED_BUILDER") == "1":
+            report = _run_managed_builder(build)
+        else:
+            report = _simulated_builder_report(build)
+        if not report.get("pr_url"):
+            raise RuntimeError("Managed builder did not return a pull request URL.")
+
         updated = _expect_one(
             writer.update(
                 "mvp_builds",
@@ -494,8 +499,10 @@ def _background_build(build_id: str) -> None:
                 {
                     "status": "completed",
                     "stage": "completed",
-                    "summary": summary,
-                    "branch_name": f"forge/build-{build_id[:8]}",
+                    "summary": report.get("summary"),
+                    "branch_name": report.get("branch_name"),
+                    "pr_url": report.get("pr_url"),
+                    "preview_url": report.get("preview_url"),
                     "completed_at": _now(),
                 },
             ),
@@ -513,6 +520,73 @@ def _background_build(build_id: str) -> None:
             f"id=eq.{build_id}",
             {"status": "failed", "stage": "failed", "error": str(exc), "completed_at": _now()},
         )
+
+
+def _run_managed_builder(build: dict[str, Any]) -> dict[str, Any]:
+    if not os.environ.get("GEMINI_API_KEY"):
+        raise RuntimeError("GEMINI_API_KEY is required when FORGE_ENABLE_MANAGED_BUILDER=1")
+    raw = ManagedAgentClient(api_key=os.environ.get("GEMINI_API_KEY")).run_builder_agent(
+        build.get("prompt_context") or {}
+    )
+    return _parse_builder_report(raw)
+
+
+def _simulated_builder_report(build: dict[str, Any]) -> dict[str, Any]:
+    repo_url = build.get("repo_url") or "https://github.com/forge-labs/generated-mvp"
+    return {
+        "generated_repo_url": repo_url,
+        "branch_name": f"forge/build-{build['id'][:8]}",
+        "pr_url": f"{repo_url.rstrip('/')}/pull/1",
+        "preview_url": None,
+        "summary": (
+            "Managed builder prompt prepared and simulated PR metadata recorded. "
+            "Set FORGE_ENABLE_MANAGED_BUILDER=1 to launch Gemini Antigravity."
+        ),
+        "artifacts": [
+            {"type": "readme", "content": "Simulated README contract satisfied."},
+            {"type": "test_result", "content": "Simulated smoke checks passed."},
+            {"type": "service_manifest", "content": "No external services used."},
+        ],
+    }
+
+
+def _parse_builder_report(raw: str) -> dict[str, Any]:
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError:
+        value = json.loads(_extract_json_object(raw))
+
+    if isinstance(value, dict) and isinstance(value.get("pr_url"), str):
+        return value
+    if isinstance(value, dict):
+        output_text = _extract_interaction_text(value)
+        if output_text:
+            return json.loads(_extract_json_object(output_text))
+    raise ValueError("Builder output did not include PR metadata JSON.")
+
+
+def _extract_interaction_text(value: dict[str, Any]) -> str:
+    if isinstance(value.get("output_text"), str):
+        return value["output_text"]
+    outputs = value.get("outputs")
+    if not isinstance(outputs, list):
+        return ""
+    parts = []
+    for output in outputs:
+        if isinstance(output, dict) and isinstance(output.get("text"), str):
+            parts.append(output["text"])
+    return "\n".join(parts)
+
+
+def _extract_json_object(raw: str) -> str:
+    fenced = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw, re.IGNORECASE)
+    if fenced:
+        return fenced.group(1).strip()
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start >= 0 and end > start:
+        return raw[start : end + 1]
+    raise ValueError("No JSON object found in builder output.")
 
 
 def _fallback_bull_bear_evaluation(cluster, exc: Exception) -> BullBearEvaluation:

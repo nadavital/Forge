@@ -26,6 +26,7 @@ export async function loadProjectSettings(projectId: string): Promise<ProjectSet
   }
 
   return {
+    repoUrl: bundle.project.repo_url,
     sources: bundle.sources.map((source) => ({
       id: source.id,
       name: source.name,

@@ -32,7 +32,8 @@ export function NewProjectForm() {
     startTransition(async () => {
       await createProject({
         name: String(formData.get("name") ?? ""),
-        mode: formData.get("mode") as ProjectMode
+        mode: formData.get("mode") as ProjectMode,
+        repoUrl: String(formData.get("repoUrl") ?? "")
       });
     });
   }
@@ -76,6 +77,18 @@ export function NewProjectForm() {
           name="name"
           placeholder="Acme Console"
           required
+        />
+
+        <label className="field-label" htmlFor="repo-url">
+          GitHub repository
+        </label>
+        <input
+          autoComplete="off"
+          className="field-input"
+          disabled={isPending}
+          id="repo-url"
+          name="repoUrl"
+          placeholder="https://github.com/rkibel/auto-drone"
         />
         <button className="btn btn-primary btn-wide" disabled={isPending} type="submit">
           {isPending ? "Creating…" : "Create project"}

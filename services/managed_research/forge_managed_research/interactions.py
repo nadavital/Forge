@@ -172,6 +172,32 @@ class ManagedAgentClient:
             timeout_seconds=timeout_seconds,
         )
 
+    def run_builder_agent(
+        self,
+        prompt_context: dict[str, Any],
+        timeout_seconds: int = 900,
+    ) -> str:
+        interaction = self.client.interactions.create(
+            agent=DEFAULT_ANTIGRAVITY_AGENT,
+            input=_builder_agent_prompt(prompt_context),
+            system_instruction=(
+                "You are Forge's ManagedBuilder. Build only the approved MVP, "
+                "open a GitHub pull request, and return final JSON metadata."
+            ),
+            environment={
+                "type": "remote",
+                "sources": [
+                    {
+                        "type": "inline",
+                        "target": "AGENTS.md",
+                        "content": _builder_agent_instructions(),
+                    }
+                ],
+            },
+            tools=[{"type": "code_execution"}],
+        )
+        return getattr(interaction, "output_text", "") or str(interaction)
+
     def run_deep_research(
         self,
         topic: str,
@@ -557,3 +583,57 @@ Return exactly one fenced JSON block:
   "confidence": 0.0
 }}
 """
+
+
+def _builder_agent_prompt(prompt_context: dict[str, Any]) -> str:
+    title = (prompt_context.get("opportunity") or {}).get("title") or "Untitled opportunity"
+    return f"""
+Build the approved Forge MVP in the target repository and open a pull request.
+
+Priority order:
+1. Follow user_notes and saved_user_notes when present.
+2. Stay inside the approved opportunity and builder_system_prompt.
+3. Use the template repo.
+4. Use code and free services only.
+5. Do not add paid APIs, production deploys, or secret-requiring integrations.
+
+Required output:
+- Runnable app code in a branch on the target repo.
+- README with setup and run instructions.
+- Basic tests or smoke checks.
+- Explanation of the product MVP.
+- List of free external services used, if any.
+- Pull request title exactly: Build MVP: {title}
+
+When complete, return one JSON object:
+{{
+  "generated_repo_url": "https://github.com/org/repo",
+  "branch_name": "forge/opportunity-slug",
+  "pr_url": "https://github.com/org/repo/pull/123",
+  "preview_url": null,
+  "summary": "Short build and review summary.",
+  "artifacts": [
+    {{"type": "readme", "content": "README summary or URL."}},
+    {{"type": "test_result", "content": "Smoke check output."}},
+    {{"type": "service_manifest", "content": "Free services used, or none."}}
+  ]
+}}
+
+Build context:
+{prompt_context}
+"""
+
+
+def _builder_agent_instructions() -> str:
+    return "\n".join(
+        [
+            "Forge generated MVP rules:",
+            "- Stay within the approved opportunity.",
+            "- Use the configured target repository and template repo.",
+            "- Open a pull request in the target repository when finalized.",
+            "- Include runnable app code, README instructions, and smoke checks.",
+            "- Use only code and free services.",
+            "- Do not use paid APIs, production deployments, or secret-requiring integrations.",
+            "- Return final PR metadata as JSON.",
+        ]
+    )

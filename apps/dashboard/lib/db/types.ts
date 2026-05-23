@@ -83,6 +83,8 @@ export type DbOpportunity = {
   score_rationale?: string | null;
   status?: string | null;
   profile?: JsonObject | null;
+  created_at?: string;
+  updated_at?: string;
 };
 
 export type DbOpportunitySignal = {
