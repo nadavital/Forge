@@ -1,6 +1,7 @@
 "use client";
 
 import { useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { generateReflection, resolveReflection } from "@/app/actions/reflection";
 import type { ReflectionProposal } from "@/types/forge";
 
@@ -10,19 +11,23 @@ type ReflectionPanelProps = {
 };
 
 export function ReflectionPanel({ proposals, projectId }: ReflectionPanelProps) {
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const open = proposals.filter((proposal) => proposal.status === "proposed");
 
   if (open.length === 0) {
     return (
-      <section className="settings-card">
+      <section className="settings-section">
         <div className="settings-card-header">
           <h2>Reflection proposals</h2>
           <button className="btn btn-secondary" disabled={isPending} onClick={() => run()} type="button">
-            Run reflection
+            {isPending ? "Running..." : "Run reflection"}
           </button>
         </div>
-        <p className="settings-empty">No open Forge self-improvement proposals.</p>
+        <p className="settings-empty">
+          No open Forge self-improvement proposals. Run reflection to generate one from this project's feedback and
+          build history.
+        </p>
       </section>
     );
   }
@@ -30,24 +35,28 @@ export function ReflectionPanel({ proposals, projectId }: ReflectionPanelProps) 
   function run() {
     startTransition(async () => {
       await generateReflection({ projectId });
+      router.refresh();
     });
   }
 
   function decide(proposal: ReflectionProposal, decision: "accepted" | "rejected") {
     startTransition(async () => {
       await resolveReflection({ proposalId: proposal.id, projectId: proposal.projectId, decision });
+      router.refresh();
     });
   }
 
   return (
-    <section className="settings-card">
+    <section className="settings-section">
       <div className="settings-card-header">
         <h2>Reflection proposals</h2>
         <button className="btn btn-secondary" disabled={isPending} onClick={() => run()} type="button">
-          Run reflection
+          {isPending ? "Running..." : "Run reflection"}
         </button>
       </div>
-      <p className="settings-desc">Review-required changes Forge wants to make to its own behavior.</p>
+      <p className="settings-desc">
+        Review Forge self-improvement proposals before changing rubrics, scoring, eval cases, or preferences.
+      </p>
       <ul className="reflection-list">
         {open.map((proposal) => (
           <li className="reflection-item" key={proposal.id}>

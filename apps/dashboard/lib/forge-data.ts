@@ -246,7 +246,6 @@ function findEvaluation(evaluations: DbEvaluation[], evaluator: string): DbEvalu
 function projectModeLabel(mode: string): string {
   if (mode === "connected_product") return "Connected product";
   if (mode === "new_product") return "New product";
-  if (mode === "sample_project") return "Sample project";
   return mode.replace(/_/g, " ");
 }
 

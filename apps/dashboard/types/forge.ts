@@ -69,7 +69,7 @@ export type MorningReviewProject = {
 
 export type ReviewAction = "approve" | "watch" | "reject" | "research_more";
 
-export type ProjectMode = "connected_product" | "new_product" | "sample_project";
+export type ProjectMode = "connected_product" | "new_product";
 
 export type ProjectSettingsView = {
   project: {
@@ -87,12 +87,18 @@ export type ProjectSettingsView = {
     }>;
   };
   sources: Array<{ id: string; name: string; type: string; status: string }>;
-  triggers: Array<{ id: string; name: string; type: string; status: string }>;
+  triggers: Array<{ id: string; name: string; type: string; status: string; lastRunAt?: string | null }>;
   preferences: {
     riskTolerance: string;
     markets: string[];
     notes: string;
   };
+};
+
+export type SchedulerOverview = {
+  activeCount: number;
+  dueCount: number;
+  lastRunAt?: string | null;
 };
 
 export type ReflectionProposal = {

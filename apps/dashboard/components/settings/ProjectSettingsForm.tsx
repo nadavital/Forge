@@ -53,9 +53,8 @@ export function ProjectSettingsForm({ projectId, settings }: ProjectSettingsForm
   return (
     <div className="settings-form">
       <form action={onSubmit} className="settings-form">
-        <section className="settings-card">
+        <section className="settings-section">
           <h2>Project onboarding</h2>
-          <p className="settings-desc">The minimum setup Forge needs before reviews are worth trusting.</p>
           <ul className="settings-checklist">
             {settings.onboarding.checklist.map((item) => (
               <li key={item.id}>
@@ -73,11 +72,8 @@ export function ProjectSettingsForm({ projectId, settings }: ProjectSettingsForm
           </ul>
         </section>
 
-        <section className="settings-card">
+        <section className="settings-section">
           <h2>Repository connection</h2>
-          <p className="settings-desc">
-            GitHub is stored as project metadata and mirrored into the GitHub source config.
-          </p>
           <div className="settings-fields">
             <label className="field-label" htmlFor="repoUrl">
               GitHub repository
@@ -117,9 +113,8 @@ export function ProjectSettingsForm({ projectId, settings }: ProjectSettingsForm
           </div>
         </section>
 
-        <section className="settings-card">
+        <section className="settings-section">
           <h2>Sources</h2>
-          <p className="settings-desc">Inputs that feed ranking and research for this project.</p>
           <ul className="settings-rows editable">
             {settings.sources.map((source) => (
               <li key={source.id}>
@@ -137,15 +132,17 @@ export function ProjectSettingsForm({ projectId, settings }: ProjectSettingsForm
           </ul>
         </section>
 
-        <section className="settings-card">
+        <section className="settings-section">
           <h2>Triggers</h2>
-          <p className="settings-desc">When Forge runs for this project.</p>
           <ul className="settings-rows editable">
             {settings.triggers.map((trigger) => (
               <li key={trigger.id}>
                 <div>
                   <strong>{trigger.name}</strong>
-                  <span>{trigger.type}</span>
+                  <span>
+                    {trigger.type}
+                    {trigger.lastRunAt ? ` · last run ${formatTime(trigger.lastRunAt)}` : ""}
+                  </span>
                 </div>
                 <select defaultValue={trigger.status} disabled={isPending} name={`trigger-${trigger.id}`}>
                   <option value="active">active</option>
@@ -157,9 +154,8 @@ export function ProjectSettingsForm({ projectId, settings }: ProjectSettingsForm
           </ul>
         </section>
 
-        <section className="settings-card">
+        <section className="settings-section">
           <h2>Preference profile</h2>
-          <p className="settings-desc">Explicit taste used when ranking opportunities.</p>
           <div className="settings-fields">
             <label className="field-label" htmlFor="riskTolerance">
               Risk tolerance
@@ -198,11 +194,8 @@ export function ProjectSettingsForm({ projectId, settings }: ProjectSettingsForm
         </button>
       </form>
 
-      <section className="settings-card danger-card">
+      <section className="settings-section danger-card">
         <h2>Remove project</h2>
-        <p className="settings-desc">
-          Archive hides this project from active reviews and disables its triggers while preserving its records.
-        </p>
         <button className="btn btn-danger" disabled={isPending} onClick={onArchive} type="button">
           <Archive aria-hidden="true" />
           Archive project
@@ -210,4 +203,10 @@ export function ProjectSettingsForm({ projectId, settings }: ProjectSettingsForm
       </section>
     </div>
   );
+}
+
+function formatTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }

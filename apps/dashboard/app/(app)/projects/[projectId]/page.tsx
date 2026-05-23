@@ -1,5 +1,4 @@
 import { notFound } from "next/navigation";
-import { MorningDigestBanner } from "@/components/projects/MorningDigestBanner";
 import { OpportunityCard } from "@/components/opportunities/OpportunityCard";
 import { ProjectHeader } from "@/components/projects/ProjectHeader";
 import { loadDashboardProject } from "@/lib/dashboard-data";
@@ -30,8 +29,6 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
         signalCount={project.signalCount}
       />
 
-      {project.digest ? <MorningDigestBanner digest={project.digest} /> : null}
-
       {project.opportunities.length === 0 ? (
         <section className="empty-panel">
           <h2>No opportunities yet</h2>
@@ -40,8 +37,8 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
       ) : (
         <section aria-labelledby="opportunities-heading" className="review-section">
           <div className="section-head">
-            <h2 id="opportunities-heading">Today&apos;s queue</h2>
-            <p>{plural(project.opportunities.length, "idea", "ideas")} ranked from the last run</p>
+            <h2 id="opportunities-heading">Opportunities</h2>
+            <p>{plural(project.opportunities.length, "idea", "ideas")} available for review</p>
           </div>
           <div className="card-grid">
             {project.opportunities.map((opportunity) => (

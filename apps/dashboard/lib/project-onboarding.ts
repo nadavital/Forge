@@ -243,18 +243,12 @@ function normalizeMarkets(markets: string[] | undefined, mode: ProjectMode): str
   if (mode === "connected_product") {
     return ["Existing product", "Developer tools"];
   }
-  if (mode === "sample_project") {
-    return ["Sample project"];
-  }
   return ["New market"];
 }
 
 function defaultPreferenceNotes(mode: ProjectMode): string {
   if (mode === "connected_product") {
     return "Start with repo evidence and manual ideas before enabling scheduled reviews.";
-  }
-  if (mode === "sample_project") {
-    return "Use this project to validate Forge contracts without production data.";
   }
   return "Start with manual ideas and taste notes until the loop feels right.";
 }

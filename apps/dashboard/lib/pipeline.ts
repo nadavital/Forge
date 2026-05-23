@@ -67,8 +67,8 @@ export async function triggerProjectPipeline(projectId: string): Promise<{ runId
   });
 
   await completePipelineRun(run.id, {
-    source: "new_product_seed",
-    digest_summary: `Seeded ${discovery.opportunities.length} new-product directions from your preference profile.`,
+    source: "new_product_generated",
+    digest_summary: `Generated ${discovery.opportunities.length} new-product directions from your preference profile.`,
     changes: [
       `Generated ${discovery.signals.length} preference/profile signals`,
       `Ranked ${discovery.opportunities.length} buildable ideas for review`,
@@ -78,7 +78,7 @@ export async function triggerProjectPipeline(projectId: string): Promise<{ runId
 
   return {
     runId: run.id,
-    message: "Pipeline run completed. Refresh to review seeded product ideas."
+    message: "Pipeline run completed. Refresh to review generated product ideas."
   };
 }
 

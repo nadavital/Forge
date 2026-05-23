@@ -33,7 +33,7 @@ The frontend should show only opportunities that have passed the agent evaluatio
 Use these exact string values unless this doc is updated.
 
 ```ts
-export type ProjectMode = "connected_product" | "new_product" | "sample_project";
+export type ProjectMode = "connected_product" | "new_product";
 
 export type RunStatus = "queued" | "in_progress" | "completed" | "failed";
 
@@ -227,7 +227,7 @@ Request:
 }
 ```
 
-For a new or sample project, `repo_url` may be `null`; backend may create or ask GitHub to create the repo later.
+For a new product, `repo_url` may be `null`; builds that need a PR require a repository before launch.
 
 Response:
 

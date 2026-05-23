@@ -2,7 +2,7 @@
 
 Internal morning-review UI for Forge Phase 4.
 
-## Quick start (local demo)
+## Quick start
 
 From the Forge repo root:
 
@@ -12,18 +12,17 @@ pnpm setup
 pnpm dev
 ```
 
-Open **http://localhost:3000** — you'll land on **Acme Console** with two ranked opportunities.
+Open **http://localhost:3000**. The local dashboard starts empty unless you have already created projects in
+`.forge-data/store.json` or connected Supabase.
 
 ### What to click through
 
-1. **Acme Console → Review** — morning digest + opportunity cards
-2. **API key recovery** — full breakdown, Pass / Watch / Research, refine box, **Build**
-3. After Build — expand artifact sections (README, run instructions, smoke checks)
-4. **Review | Settings** tabs — edit sources, triggers, taste; review reflection proposals
-5. **Forge settings** (sidebar footer) — workspace guardrails + reflection queue
-6. **+** in sidebar — create a new connected or new-product project
+1. **Projects** — workspace overview across persisted projects
+2. **+** in sidebar — add an existing GitHub repo or start a new product idea
+3. **Project → Review** — opportunity cards after a real project run has produced records
+4. **Project → Settings** — edit sources, schedule triggers, taste, and reflection proposals
 
-### Reset demo data
+### Reset local data
 
 ```bash
 pnpm --filter @forge/dashboard seed:reset
@@ -40,27 +39,29 @@ cp apps/dashboard/.env.local.example apps/dashboard/.env.local
 pnpm dev
 ```
 
-Without env vars, the dashboard uses **`.forge-data/store.json`** (gitignored) seeded from `data/seed.json`.
+Without env vars, the dashboard uses **`.forge-data/store.json`** (gitignored). It starts empty and only shows
+projects created through the app or records written by the local pipeline.
 
 ## Scripts
 
 | Command | Description |
 |---------|-------------|
 | `pnpm dev` | Start dev server (webpack, Safari-safe CSS) |
-| `pnpm setup` | Seed local demo data |
-| `pnpm seed:reset` | Delete local store (dashboard package) |
+| `pnpm setup` | Prepare local dashboard storage |
+| `pnpm seed:reset` | Delete local store (dashboard package); it will be recreated empty |
 
 ## Dashboard vs backend split
 
-**Dashboard (this app) — done for Phase 4 demo**
+**Dashboard (this app)**
 
-- Project onboarding with GitHub repo connection, settings UI, morning review, opportunity detail
+- Project onboarding with optional GitHub repo connection, project settings UI, project review, opportunity detail
 - Review actions → `preference_events`
 - Build button → build brief → Gemini managed builder when `GEMINI_API_KEY` is set, otherwise simulated builder → `mvp_builds` + `build_artifacts`
 - Reflection proposal accept/reject
+- Project scheduler control → runs due active schedule triggers for the selected project
 - Connected product setup with a GitHub repo URL → README/issues ingestion → repo-specific opportunity ranking
-- New product runs seed buildable ideas from the preference/profile context when you do not know what to build yet
-- Run again re-ingests the connected repo when a repo URL is configured, or refreshes seeded ideas for new products
+- New product runs generate buildable ideas from the preference/profile context when you do not know what to build yet
+- Run again re-ingests the connected repo when a repo URL is configured, or refreshes generated ideas for new products
 - Archive project (hides it and disables triggers without deleting history)
 
 **Backend (your partner) — still to wire**
@@ -95,4 +96,4 @@ Forge fetches the repository metadata, README, and latest issues, then creates r
 
 ## New product demo
 
-For new products, leaving the idea direction blank is valid. Forge seeds ideas from the project preference profile and demo constraints, then writes explicit `manual_preference`, `builder_profile`, and `demo_constraint` signals before creating opportunities. Editing preferred markets or notes in project settings steers the next run.
+For new products, leaving the idea direction blank is valid. Forge generates ideas from the project preference profile and constraints, then writes explicit `manual_preference`, `builder_profile`, and `demo_constraint` signals before creating opportunities. Editing preferred markets or notes in project settings steers the next run.

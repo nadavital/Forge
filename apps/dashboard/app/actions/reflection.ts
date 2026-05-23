@@ -19,7 +19,6 @@ export async function resolveReflection({ proposalId, projectId, decision }: Res
     payload: { proposalId, decision, source: "reflection_review" }
   });
 
-  revalidatePath("/settings");
   revalidatePath(`/projects/${projectId}/settings`);
 
   return {
@@ -31,7 +30,6 @@ export async function resolveReflection({ proposalId, projectId, decision }: Res
 export async function generateReflection(input: { projectId?: string } = {}) {
   const result = await runReflection({ projectId: input.projectId });
 
-  revalidatePath("/settings");
   if (input.projectId) {
     revalidatePath(`/projects/${input.projectId}/settings`);
   }
