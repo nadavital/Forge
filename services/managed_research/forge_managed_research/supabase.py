@@ -280,39 +280,42 @@ class SupabaseWriter:
             "evaluation_rows_saved": len(evaluation_rows),
         }
 
-    def save_trend_research(self, result: TrendResearchPipelineResult) -> dict[str, Any]:
-        run = self.insert(
-            "pipeline_runs",
-            [
-                {
-                    "run_type": "managed",
-                    "status": "completed",
-                    "trigger": "managed_agent",
-                    "metadata": {
-                        "pipeline": "trend_research",
-                        "topic": result.topic,
-                        "trend_agent": result.trend.agent,
-                        "research_agent": result.research.agent,
-                        "media_item_count": len(result.trend.media_items),
-                        "research_finding_count": len(result.research_findings),
-                        "signal_count": len(result.research.signals),
-                        "opportunity_count": len(result.research.opportunities),
-                        "media_items": [
-                            item.to_metadata()
-                            for item in result.trend.media_items
-                        ],
-                        "research_findings": [
-                            finding.to_metadata()
-                            for finding in result.research_findings
-                        ],
-                        "raw_output_chars": {
-                            "trend": len(result.trend.raw_text),
-                            "research": len(result.research.raw_text),
-                        },
-                    },
-                }
-            ],
-        )[0]
+    def save_trend_research(
+        self,
+        result: TrendResearchPipelineResult,
+        project_id: str | None = None,
+    ) -> dict[str, Any]:
+        run_row: dict[str, Any] = {
+            "run_type": "managed",
+            "status": "completed",
+            "trigger": "managed_agent",
+            "metadata": {
+                "pipeline": "trend_research",
+                "topic": result.topic,
+                "trend_agent": result.trend.agent,
+                "research_agent": result.research.agent,
+                "media_item_count": len(result.trend.media_items),
+                "research_finding_count": len(result.research_findings),
+                "signal_count": len(result.research.signals),
+                "opportunity_count": len(result.research.opportunities),
+                "media_items": [
+                    item.to_metadata()
+                    for item in result.trend.media_items
+                ],
+                "research_findings": [
+                    finding.to_metadata()
+                    for finding in result.research_findings
+                ],
+                "raw_output_chars": {
+                    "trend": len(result.trend.raw_text),
+                    "research": len(result.research.raw_text),
+                },
+            },
+        }
+        if project_id:
+            run_row["project_id"] = project_id
+            run_row["metadata"]["project_id"] = project_id
+        run = self.insert("pipeline_runs", [run_row])[0]
         run_id = run["id"]
 
         signal_rows = self.insert(
@@ -326,7 +329,9 @@ class SupabaseWriter:
                         "pipeline_run_id": run_id,
                         "trend_agent": result.trend.agent,
                         "research_agent": result.research.agent,
+                        **({"project_id": project_id} if project_id else {}),
                     },
+                    **({"project_id": project_id} if project_id else {}),
                 }
                 for signal in result.research.signals
             ],
@@ -334,7 +339,10 @@ class SupabaseWriter:
         opportunity_rows = self.insert(
             "opportunities",
             [
-                opportunity.to_supabase_row(pipeline_run_id=run_id)
+                {
+                    **opportunity.to_supabase_row(pipeline_run_id=run_id),
+                    **({"project_id": project_id} if project_id else {}),
+                }
                 for opportunity in result.research.opportunities
             ],
         )
