@@ -133,9 +133,54 @@ python -m forge_managed_research.ingest \
   --save
 ```
 
+## Cluster And Evaluate Opportunities
+
+Raw opportunities are coarse and may duplicate each other. Cluster them before spending managed-agent quota on debate:
+
+```bash
+python -m forge_managed_research.evaluate \
+  --mode cluster \
+  --max-opportunities 100 \
+  --max-clusters 5 \
+  --save
+```
+
+Then run Bull/Bear/Decision/Synthesizer on a canonical cluster:
+
+```bash
+python -m forge_managed_research.evaluate \
+  --mode bull-bear \
+  --cluster-index 0 \
+  --save
+```
+
+The evaluation flow is:
+
+```text
+opportunities -> canonical opportunity clusters -> BullAgent -> BearAgent -> DecisionAgent -> Synthesizer
+```
+
+Cluster packets are saved in `pipeline_runs.metadata`. Bull, Bear, Decision, and Synthesizer outputs are saved to `opportunity_evaluations` on the representative opportunity. The Synthesizer creates:
+
+- a concise product pitch
+- MVP scope and non-goals
+- a builder system prompt for the later managed sandbox build
+- builder readiness: `ready` or `not_ready`
+
+Fixture-only validation, without managed-agent calls:
+
+```bash
+python -m forge_managed_research.evaluate \
+  --mode bull-bear \
+  --cluster-index 0 \
+  --evaluation-input-file tests/fixtures/bull_bear_output.md \
+  --dry-run
+```
+
 ## Honest Limits
 
 - Deep Research is best for cited reports, not guaranteed clean database rows.
 - Antigravity is best for browsing, repo inspection, code execution, and file artifacts.
 - Antigravity currently does not guarantee structured output, so Forge validates extracted JSON before saving.
 - Source/API limits still apply. Use `GITHUB_TOKEN` for GitHub. Add source-specific auth when a public source becomes limiting.
+- Bull/Bear/Synthesizer uses managed agents where available, but the deterministic clustering step should run first to avoid wasting quota on duplicate opportunities.

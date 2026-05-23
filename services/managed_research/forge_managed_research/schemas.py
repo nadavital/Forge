@@ -326,3 +326,113 @@ class SourceCollectionResult:
     @property
     def raw_text(self) -> str:
         return ""
+
+
+@dataclass
+class OpportunityRecord:
+    id: str
+    title: str
+    problem: str
+    target_user: str
+    mvp_concept: str
+    score: float
+    score_rationale: str
+    pipeline_run_id: str | None = None
+    evidence_signal_ids: list[str] = field(default_factory=list)
+    evidence_count: int = 0
+    profile: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_supabase_row(cls, value: dict[str, Any]) -> "OpportunityRecord":
+        raw_score = value.get("score", 0)
+        try:
+            score = max(0.0, min(1.0, float(raw_score)))
+        except (TypeError, ValueError):
+            score = 0.0
+        return cls(
+            id=str(value.get("id") or ""),
+            title=str(value.get("title") or "Untitled opportunity"),
+            problem=str(value.get("problem") or ""),
+            target_user=str(value.get("target_user") or "Unknown user"),
+            mvp_concept=str(value.get("mvp_concept") or ""),
+            score=score,
+            score_rationale=str(value.get("score_rationale") or ""),
+            pipeline_run_id=value.get("pipeline_run_id") or None,
+            profile=value.get("profile") if isinstance(value.get("profile"), dict) else {},
+        )
+
+
+@dataclass
+class SignalRecord:
+    id: str
+    source: str
+    title: str
+    body: str
+    url: str | None = None
+    tags: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_supabase_row(cls, value: dict[str, Any]) -> "SignalRecord":
+        return cls(
+            id=str(value.get("id") or ""),
+            source=str(value.get("source") or "unknown"),
+            title=str(value.get("title") or "Untitled signal"),
+            body=str(value.get("body") or ""),
+            url=value.get("url") or None,
+            tags=[str(item) for item in value.get("tags", []) if item],
+            metadata=value.get("metadata") if isinstance(value.get("metadata"), dict) else {},
+        )
+
+
+@dataclass
+class OpportunityCluster:
+    canonical_title: str
+    problem: str
+    target_user: str
+    mvp_concept: str
+    score: float
+    representative_opportunity_id: str
+    merged_opportunity_ids: list[str]
+    evidence_signal_ids: list[str]
+    variants: list[str]
+    tags: list[str]
+    why_clustered: str
+    evidence: list[SignalRecord] = field(default_factory=list)
+
+    def to_metadata(self) -> dict[str, Any]:
+        return {
+            "canonical_title": self.canonical_title,
+            "problem": self.problem,
+            "target_user": self.target_user,
+            "mvp_concept": self.mvp_concept,
+            "score": self.score,
+            "representative_opportunity_id": self.representative_opportunity_id,
+            "merged_opportunity_ids": self.merged_opportunity_ids,
+            "evidence_signal_ids": self.evidence_signal_ids,
+            "variants": self.variants,
+            "tags": self.tags,
+            "why_clustered": self.why_clustered,
+            "evidence": [
+                {
+                    "id": signal.id,
+                    "source": signal.source,
+                    "title": signal.title,
+                    "body": signal.body,
+                    "url": signal.url,
+                    "tags": signal.tags,
+                    "metadata": signal.metadata,
+                }
+                for signal in self.evidence
+            ],
+        }
+
+
+@dataclass
+class BullBearEvaluation:
+    cluster: OpportunityCluster
+    bull: dict[str, Any]
+    bear: dict[str, Any]
+    decision: dict[str, Any]
+    synthesis: dict[str, Any] = field(default_factory=dict)
+    raw_outputs: dict[str, str] = field(default_factory=dict)

@@ -9,8 +9,12 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from .schemas import (
+    BullBearEvaluation,
     ManagedResearchResult,
+    OpportunityCluster,
+    OpportunityRecord,
     SeedDiscoveryResult,
+    SignalRecord,
     SourceCollectionResult,
     TrendResearchPipelineResult,
 )
@@ -44,6 +48,142 @@ class SupabaseWriter:
         except HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
             raise RuntimeError(f"Supabase insert failed for {table}: HTTP {exc.code} {body}") from exc
+
+    def select(self, table: str, query: str) -> list[dict[str, Any]]:
+        request = Request(
+            f"{self.url}/rest/v1/{table}?{query}",
+            headers={
+                "apikey": self.key,
+                "Authorization": f"Bearer {self.key}",
+            },
+        )
+        try:
+            with urlopen(request, timeout=30) as response:
+                result = json.loads(response.read().decode("utf-8"))
+                return result if isinstance(result, list) else [result]
+        except HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"Supabase select failed for {table}: HTTP {exc.code} {body}") from exc
+
+    def fetch_opportunity_records(self, limit: int = 100) -> tuple[list[OpportunityRecord], dict[str, SignalRecord]]:
+        opportunity_rows = self.select(
+            "opportunities",
+            "select=id,title,problem,target_user,mvp_concept,score,score_rationale,pipeline_run_id,profile"
+            f"&order=score.desc&limit={max(1, limit)}",
+        )
+        opportunities = [
+            OpportunityRecord.from_supabase_row(row)
+            for row in opportunity_rows
+            if row.get("id")
+        ]
+        if not opportunities:
+            return [], {}
+
+        opportunity_ids = [opportunity.id for opportunity in opportunities]
+        opportunity_id_filter = ",".join(opportunity_ids)
+        link_rows = self.select(
+            "opportunity_signals",
+            f"select=opportunity_id,signal_id&opportunity_id=in.({opportunity_id_filter})",
+        )
+        signal_ids = sorted(
+            {
+                str(row.get("signal_id"))
+                for row in link_rows
+                if row.get("signal_id")
+            }
+        )
+        signals_by_id: dict[str, SignalRecord] = {}
+        if signal_ids:
+            signal_id_filter = ",".join(signal_ids)
+            signal_rows = self.select(
+                "signals",
+                f"select=id,source,title,body,url,tags,metadata&id=in.({signal_id_filter})",
+            )
+            signals_by_id = {
+                str(row["id"]): SignalRecord.from_supabase_row(row)
+                for row in signal_rows
+                if row.get("id")
+            }
+
+        evidence_by_opportunity: dict[str, list[str]] = {}
+        for row in link_rows:
+            opportunity_id = str(row.get("opportunity_id") or "")
+            signal_id = str(row.get("signal_id") or "")
+            if opportunity_id and signal_id:
+                evidence_by_opportunity.setdefault(opportunity_id, []).append(signal_id)
+        for opportunity in opportunities:
+            opportunity.evidence_signal_ids = evidence_by_opportunity.get(opportunity.id, [])
+            opportunity.evidence_count = len(opportunity.evidence_signal_ids)
+        return opportunities, signals_by_id
+
+    def save_opportunity_clusters(self, clusters: list[OpportunityCluster]) -> dict[str, Any]:
+        run = self.insert(
+            "pipeline_runs",
+            [
+                {
+                    "run_type": "managed",
+                    "status": "completed",
+                    "trigger": "managed_agent",
+                    "metadata": {
+                        "pipeline": "opportunity_clustering",
+                        "cluster_count": len(clusters),
+                        "clusters": [cluster.to_metadata() for cluster in clusters],
+                    },
+                }
+            ],
+        )[0]
+        return {
+            "pipeline_run_id": run["id"],
+            "clusters_saved_in_run_metadata": len(clusters),
+        }
+
+    def save_bull_bear_evaluation(self, result: BullBearEvaluation) -> dict[str, Any]:
+        cluster_metadata = result.cluster.to_metadata()
+        run = self.insert(
+            "pipeline_runs",
+            [
+                {
+                    "run_type": "managed",
+                    "status": "completed",
+                    "trigger": "managed_agent",
+                    "metadata": {
+                        "pipeline": "bull_bear_evaluation",
+                        "cluster": cluster_metadata,
+                        "evaluators": ["bull_agent", "bear_agent", "decision_agent", "synthesizer_agent"],
+                        "raw_output_chars": {
+                            name: len(text)
+                            for name, text in result.raw_outputs.items()
+                        },
+                    },
+                }
+            ],
+        )[0]
+        rows = []
+        for evaluator, content in [
+            ("bull_agent", result.bull),
+            ("bear_agent", result.bear),
+            ("decision_agent", result.decision),
+            ("synthesizer_agent", result.synthesis),
+        ]:
+            rows.append(
+                {
+                    "opportunity_id": result.cluster.representative_opportunity_id,
+                    "evaluator": evaluator,
+                    "content": _evaluation_content(content),
+                    "scores": {
+                        "overall": _evaluation_score(content),
+                        "cluster_run_id": run["id"],
+                        "canonical_title": result.cluster.canonical_title,
+                        "merged_opportunity_ids": result.cluster.merged_opportunity_ids,
+                    },
+                }
+            )
+        self.insert("opportunity_evaluations", rows)
+        return {
+            "pipeline_run_id": run["id"],
+            "evaluation_rows_saved": len(rows),
+            "representative_opportunity_id": result.cluster.representative_opportunity_id,
+        }
 
     def save(self, result: ManagedResearchResult) -> dict[str, Any]:
         run = self.insert(
@@ -326,3 +466,21 @@ class SupabaseWriter:
             "evidence_rows_saved": len(evidence_rows),
             "evaluation_rows_saved": len(evaluation_rows),
         }
+
+
+def _evaluation_content(content: dict[str, Any]) -> str:
+    for key in ("summary", "recommendation", "product_pitch", "position", "rationale"):
+        value = content.get(key)
+        if value:
+            return str(value)
+    return json.dumps(content, sort_keys=True)
+
+
+def _evaluation_score(content: dict[str, Any]) -> float:
+    for key in ("confidence", "score", "overall"):
+        value = content.get(key)
+        try:
+            return max(0.0, min(1.0, float(value)))
+        except (TypeError, ValueError):
+            continue
+    return 0.0

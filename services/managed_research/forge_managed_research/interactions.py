@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .schemas import MediaItem
+from .schemas import MediaItem, OpportunityCluster
 
 DEFAULT_ANTIGRAVITY_AGENT = "antigravity-preview-05-2026"
 DEFAULT_DEEP_RESEARCH_AGENT = "deep-research-preview-04-2026"
@@ -114,6 +114,63 @@ class ManagedAgentClient:
                 timeout_seconds=min(timeout_seconds, 300),
             )
         raise ValueError(f"Unsupported research agent: {agent}")
+
+    def run_bull_agent(
+        self,
+        cluster: OpportunityCluster,
+        agents_dir: Path,
+        timeout_seconds: int = 300,
+    ) -> str:
+        return self.run_antigravity_prompt(
+            prompt=_bull_agent_prompt(cluster),
+            agents_dir=agents_dir,
+            system_instruction="You are Forge's BullAgent. Argue the strongest credible case for this product direction.",
+            timeout_seconds=timeout_seconds,
+        )
+
+    def run_bear_agent(
+        self,
+        cluster: OpportunityCluster,
+        agents_dir: Path,
+        timeout_seconds: int = 300,
+    ) -> str:
+        return self.run_antigravity_prompt(
+            prompt=_bear_agent_prompt(cluster),
+            agents_dir=agents_dir,
+            system_instruction="You are Forge's BearAgent. Challenge feasibility, demand, evidence quality, and MVP scope.",
+            timeout_seconds=timeout_seconds,
+        )
+
+    def run_decision_agent(
+        self,
+        cluster: OpportunityCluster,
+        bull: dict[str, Any],
+        bear: dict[str, Any],
+        agents_dir: Path,
+        timeout_seconds: int = 300,
+    ) -> str:
+        return self.run_antigravity_prompt(
+            prompt=_decision_agent_prompt(cluster, bull, bear),
+            agents_dir=agents_dir,
+            system_instruction="You are Forge's DecisionAgent. Recommend the next action from the evidence and debate.",
+            timeout_seconds=timeout_seconds,
+        )
+
+    def run_synthesizer_agent(
+        self,
+        cluster: OpportunityCluster,
+        bull: dict[str, Any],
+        bear: dict[str, Any],
+        decision: dict[str, Any],
+        agents_dir: Path,
+        timeout_seconds: int = 300,
+    ) -> str:
+        return self.run_antigravity_prompt(
+            prompt=_synthesizer_agent_prompt(cluster, bull, bear, decision),
+            agents_dir=agents_dir,
+            system_instruction="You are Forge's Synthesizer. Turn an approved product direction into a pitch and builder system prompt.",
+            timeout_seconds=timeout_seconds,
+        )
 
     def run_deep_research(
         self,
@@ -348,5 +405,153 @@ Return a concise report followed by exactly one fenced JSON block:
       "profile": {{"facts": [], "inferences": [], "risks": []}}
     }}
   ]
+}}
+"""
+
+
+def _cluster_packet(cluster: OpportunityCluster) -> dict[str, Any]:
+    return {
+        "canonical_title": cluster.canonical_title,
+        "problem": cluster.problem,
+        "target_user": cluster.target_user,
+        "mvp_concept": cluster.mvp_concept,
+        "score": cluster.score,
+        "variants": cluster.variants,
+        "why_clustered": cluster.why_clustered,
+        "evidence": [
+            {
+                "source": signal.source,
+                "title": signal.title,
+                "body": signal.body,
+                "url": signal.url,
+                "tags": signal.tags,
+            }
+            for signal in cluster.evidence[:12]
+        ],
+    }
+
+
+def _bull_agent_prompt(cluster: OpportunityCluster) -> str:
+    return f"""
+You are BullAgent for Forge.
+
+Evaluate this canonical product opportunity cluster:
+{_cluster_packet(cluster)}
+
+Argue the strongest credible case for building an MVP. Stay grounded in the evidence packet.
+Do not claim market validation. Distinguish observed facts from inferences.
+
+Return exactly one fenced JSON block:
+{{
+  "position": "bull",
+  "summary": "short strongest-case argument",
+  "why_real_pain": ["..."],
+  "why_now": ["..."],
+  "adoption_case": ["..."],
+  "smallest_convincing_mvp": "...",
+  "supporting_evidence_urls": ["https://..."],
+  "confidence": 0.0,
+  "risks_to_watch": ["..."]
+}}
+"""
+
+
+def _bear_agent_prompt(cluster: OpportunityCluster) -> str:
+    return f"""
+You are BearAgent for Forge.
+
+Evaluate this canonical product opportunity cluster:
+{_cluster_packet(cluster)}
+
+Argue the strongest credible case against building this MVP now. Challenge weak evidence, buyer urgency,
+existing alternatives, scope traps, and whether the MVP is too generic. Stay grounded in the packet.
+
+Return exactly one fenced JSON block:
+{{
+  "position": "bear",
+  "summary": "short strongest-case objection",
+  "why_might_be_noise": ["..."],
+  "adoption_risks": ["..."],
+  "existing_alternatives": ["..."],
+  "scope_traps": ["..."],
+  "missing_evidence": ["..."],
+  "confidence": 0.0
+}}
+"""
+
+
+def _decision_agent_prompt(
+    cluster: OpportunityCluster,
+    bull: dict[str, Any],
+    bear: dict[str, Any],
+) -> str:
+    return f"""
+You are DecisionAgent for Forge.
+
+Canonical opportunity:
+{_cluster_packet(cluster)}
+
+Bull case:
+{bull}
+
+Bear case:
+{bear}
+
+Choose one recommendation: reject, watch, research_more, prototype, build.
+For v1, generated repo builds require human approval; do not bypass that.
+
+Return exactly one fenced JSON block:
+{{
+  "recommendation": "reject|watch|research_more|prototype|build",
+  "summary": "short decision rationale",
+  "confidence": 0.0,
+  "required_mvp_constraints": ["..."],
+  "next_action": "...",
+  "approval_needed": true,
+  "evidence_gaps": ["..."]
+}}
+"""
+
+
+def _synthesizer_agent_prompt(
+    cluster: OpportunityCluster,
+    bull: dict[str, Any],
+    bear: dict[str, Any],
+    decision: dict[str, Any],
+) -> str:
+    return f"""
+You are Synthesizer for Forge.
+
+Turn this debated product direction into two artifacts:
+1. A concise product pitch for human review.
+2. A system prompt that a managed sandbox builder can use later to build the site or MVP after human approval.
+
+Canonical opportunity:
+{_cluster_packet(cluster)}
+
+Bull case:
+{bull}
+
+Bear case:
+{bear}
+
+Decision:
+{decision}
+
+Rules:
+- The builder prompt must stay inside the approved opportunity.
+- The builder prompt must require a runnable MVP, README, smoke test, and no paid APIs or secret-requiring integrations.
+- Do not instruct the builder to deploy to production.
+- If the decision is not prototype or build, the builder prompt should be marked not_ready.
+
+Return exactly one fenced JSON block:
+{{
+  "product_pitch": "publication-quality but concise pitch",
+  "target_user": "...",
+  "mvp_scope": ["..."],
+  "non_goals": ["..."],
+  "builder_system_prompt": "...",
+  "builder_readiness": "ready|not_ready",
+  "confidence": 0.0
 }}
 """
