@@ -7,6 +7,7 @@
     "start": "pnpm --filter @forge/dashboard start",
     "build": "pnpm --filter @forge/dashboard build",
     "lint": "pnpm --filter @forge/dashboard lint",
+    "test:contracts": "pnpm --filter @forge/dashboard test:contracts",
     "typecheck": "pnpm --filter @forge/dashboard typecheck",
     "setup": "bash apps/dashboard/scripts/setup-local.sh"
   },

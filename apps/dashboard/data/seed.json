@@ -6,6 +6,8 @@
       "mode": "connected_product",
       "stage": "launched",
       "description": "Developer console for API products",
+      "repo_url": "https://github.com/acme/api-console",
+      "product_url": "https://acme.example.com",
       "created_at": "2026-05-20T06:00:00.000Z",
       "updated_at": "2026-05-23T06:18:00.000Z"
     },
@@ -15,6 +17,8 @@
       "mode": "new_product",
       "stage": "prototype",
       "description": "Personal daily newspaper product",
+      "repo_url": "https://github.com/nadavital/petal-news",
+      "product_url": "",
       "created_at": "2026-05-18T08:00:00.000Z",
       "updated_at": "2026-05-22T12:00:00.000Z"
     }
@@ -31,8 +35,14 @@
       "id": "acme-src-2",
       "project_id": "acme",
       "source_type": "github",
-      "name": "GitHub issues",
-      "status": "active"
+      "name": "acme/api-console",
+      "status": "active",
+      "config": {
+        "repo_url": "https://github.com/acme/api-console",
+        "owner": "acme",
+        "repo": "api-console",
+        "ingest": ["issues", "pull_requests"]
+      }
     },
     {
       "id": "acme-src-3",
@@ -54,6 +64,19 @@
       "source_type": "feedback_form",
       "name": "Onboarding signals",
       "status": "active"
+    },
+    {
+      "id": "petal-src-3",
+      "project_id": "petal",
+      "source_type": "github",
+      "name": "nadavital/petal-news",
+      "status": "active",
+      "config": {
+        "repo_url": "https://github.com/nadavital/petal-news",
+        "owner": "nadavital",
+        "repo": "petal-news",
+        "ingest": ["issues", "pull_requests"]
+      }
     }
   ],
   "triggers": [

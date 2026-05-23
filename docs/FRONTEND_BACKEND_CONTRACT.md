@@ -33,7 +33,7 @@ The frontend should show only opportunities that have passed the agent evaluatio
 Use these exact string values unless this doc is updated.
 
 ```ts
-export type ProjectMode = "new_project" | "existing_project";
+export type ProjectMode = "connected_product" | "new_product" | "sample_project";
 
 export type RunStatus = "queued" | "in_progress" | "completed" | "failed";
 
@@ -75,7 +75,9 @@ export type Project = {
   name: string;
   mode: ProjectMode;
   repo_url: string | null;
+  product_url: string | null;
   description: string;
+  archived_at: string | null;
   product_context: string | null;
   schedule: ProjectSchedule | null;
   latest_run: ProjectRun | null;
@@ -91,15 +93,17 @@ export type ProjectSchedule = {
 };
 ```
 
-Default schedule for new projects:
+Default trigger posture for new projects:
 
 ```json
 {
-  "enabled": true,
-  "cron": "0 8 * * 1-5",
+  "manual_review": "active",
+  "weekday_morning": "paused",
   "timezone": "America/Los_Angeles"
 }
 ```
+
+Project onboarding should create a manual idea source for every project and a GitHub source config for every project. The GitHub source is `active` when `repo_url` is present and `paused` until a repository is connected.
 
 ### Project Run
 
@@ -210,10 +214,11 @@ Request:
 
 ```json
 {
-  "mode": "existing_project",
+  "mode": "connected_product",
   "name": "My App",
   "description": "Short user-provided product description",
   "repo_url": "https://github.com/user/repo",
+  "product_url": "https://example.com",
   "schedule": {
     "enabled": true,
     "cron": "0 8 * * 1-5",
@@ -222,7 +227,7 @@ Request:
 }
 ```
 
-For a new project, `name` and `repo_url` may be `null`; backend may create or ask GitHub to create the repo later.
+For a new or sample project, `repo_url` may be `null`; backend may create or ask GitHub to create the repo later.
 
 Response:
 
@@ -231,9 +236,11 @@ Response:
   "project": {
     "id": "uuid",
     "name": "My App",
-    "mode": "existing_project",
+    "mode": "connected_product",
     "repo_url": "https://github.com/user/repo",
+    "product_url": "https://example.com",
     "description": "Short user-provided product description",
+    "archived_at": null,
     "product_context": null,
     "schedule": {
       "enabled": true,
@@ -283,7 +290,7 @@ Response:
 PATCH /api/projects/:projectId
 ```
 
-Request may include `name`, `description`, `repo_url`, `product_context`, or `schedule`.
+Request may include `name`, `description`, `repo_url`, `product_url`, `product_context`, source config statuses, trigger statuses, or `schedule`.
 
 Response:
 
@@ -292,6 +299,14 @@ Response:
   "project": {}
 }
 ```
+
+### Archive Project
+
+```http
+POST /api/projects/:projectId/archive
+```
+
+Archive is the default remove behavior in v1. It hides the project from active navigation and disables future triggers while preserving historical signals, opportunities, builds, and decisions for audit.
 
 ### Brainstorm New Project
 

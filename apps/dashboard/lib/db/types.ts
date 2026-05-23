@@ -8,6 +8,7 @@ export type DbProject = {
   description?: string | null;
   repo_url?: string | null;
   product_url?: string | null;
+  archived_at?: string | null;
   created_at?: string;
   updated_at?: string;
 };
