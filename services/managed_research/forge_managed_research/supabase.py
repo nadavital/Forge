@@ -415,11 +415,16 @@ class SupabaseWriter:
             "seed_topics_saved_in_run_metadata": len(result.seed_topics),
         }
 
-    def save_source_collection(self, result: SourceCollectionResult, project_id: str | None = None) -> dict[str, Any]:
+    def save_source_collection(
+        self,
+        result: SourceCollectionResult,
+        project_id: str | None = None,
+        trigger: str = "remote",
+    ) -> dict[str, Any]:
         run_row: dict[str, Any] = {
             "run_type": "managed",
             "status": "completed",
-            "trigger": "remote",
+            "trigger": trigger,
             "metadata": {
                 "pipeline": "source_collect",
                 "query": result.query,

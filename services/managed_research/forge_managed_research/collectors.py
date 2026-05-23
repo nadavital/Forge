@@ -7,7 +7,7 @@ import os
 import time
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import quote_plus
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from .schemas import MediaItem
@@ -21,12 +21,14 @@ class CollectorConfig:
     query: str
     limit_per_source: int = 10
     github_token: str | None = None
+    reddit_subreddits: tuple[str, ...] = ()
 
 
 def collect_public_media(config: CollectorConfig) -> list[MediaItem]:
     """Collect public media from cheap deterministic sources."""
     collectors = [
         collect_hacker_news,
+        collect_reddit,
         collect_github_issues,
     ]
     items: list[MediaItem] = []
@@ -53,8 +55,8 @@ def collect_public_media(config: CollectorConfig) -> list[MediaItem]:
 
 
 def collect_hacker_news(config: CollectorConfig) -> list[MediaItem]:
-    query = quote_plus(config.query)
-    url = f"https://hn.algolia.com/api/v1/search_by_date?query={query}&hitsPerPage={config.limit_per_source}"
+    query = urlencode({"query": config.query, "hitsPerPage": config.limit_per_source})
+    url = f"https://hn.algolia.com/api/v1/search_by_date?{query}"
     payload = _get_json(url)
     items: list[MediaItem] = []
     for hit in payload.get("hits", [])[: config.limit_per_source]:
@@ -87,9 +89,72 @@ def collect_hacker_news(config: CollectorConfig) -> list[MediaItem]:
     return items
 
 
+def collect_reddit(config: CollectorConfig) -> list[MediaItem]:
+    """Search public Reddit JSON for recent posts matching the project query."""
+    items: list[MediaItem] = []
+    subreddits = [item.strip().strip("r/") for item in config.reddit_subreddits if item.strip()]
+    targets: list[str | None] = subreddits or [None]
+    per_target_limit = max(1, config.limit_per_source)
+    for subreddit in targets:
+        params = {
+            "q": config.query,
+            "sort": "new",
+            "limit": per_target_limit,
+            "type": "link",
+        }
+        if subreddit:
+            params["restrict_sr"] = "1"
+        path = f"https://www.reddit.com/r/{subreddit}/search.json" if subreddit else "https://www.reddit.com/search.json"
+        payload = _get_json(f"{path}?{urlencode(params)}")
+        children = payload.get("data", {}).get("children", [])
+        for child in children:
+            if not isinstance(child, dict):
+                continue
+            post = child.get("data") if isinstance(child.get("data"), dict) else {}
+            title = str(post.get("title") or "Untitled Reddit post")
+            selftext = str(post.get("selftext") or "")
+            summary = _compact_text(selftext) or title
+            permalink = post.get("permalink")
+            post_subreddit = str(post.get("subreddit") or subreddit or "")
+            created_utc = post.get("created_utc")
+            published_at = None
+            if isinstance(created_utc, (int, float)):
+                published_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(created_utc))
+            items.append(
+                MediaItem(
+                    source="reddit",
+                    title=title,
+                    url=f"https://www.reddit.com{permalink}" if permalink else post.get("url"),
+                    summary=summary,
+                    captured_text=summary,
+                    published_at=published_at,
+                    tags=["reddit", post_subreddit, *_query_tags(config.query)],
+                    metadata={
+                        "subreddit": post_subreddit,
+                        "author": post.get("author"),
+                        "score": post.get("score"),
+                        "num_comments": post.get("num_comments"),
+                        "content_type": "discussion",
+                        "reddit_id": post.get("id"),
+                        "source_query": config.query,
+                    },
+                )
+            )
+            if len(items) >= config.limit_per_source:
+                return items
+    return items
+
+
 def collect_github_issues(config: CollectorConfig) -> list[MediaItem]:
-    query = quote_plus(f"{config.query} in:title,body type:issue")
-    url = f"https://api.github.com/search/issues?q={query}&sort=updated&order=desc&per_page={config.limit_per_source}"
+    query = urlencode(
+        {
+            "q": f"{config.query} in:title,body type:issue",
+            "sort": "updated",
+            "order": "desc",
+            "per_page": config.limit_per_source,
+        }
+    )
+    url = f"https://api.github.com/search/issues?{query}"
     headers = {}
     token = config.github_token or os.environ.get("GITHUB_TOKEN")
     if token:

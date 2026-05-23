@@ -53,6 +53,18 @@ def main() -> None:
     parser.add_argument("--max-topics", type=int, default=3)
     parser.add_argument("--limit-per-source", type=int, default=10)
     parser.add_argument("--max-opportunities", type=int, default=5)
+    parser.add_argument("--project-id", help="Attach saved source-collect records to a Forge project UUID.")
+    parser.add_argument(
+        "--subreddits",
+        default="",
+        help="Comma-separated subreddits used to scope Reddit source collection.",
+    )
+    parser.add_argument(
+        "--trigger",
+        choices=["remote", "schedule", "manual", "managed_agent"],
+        default="remote",
+        help="pipeline_runs trigger value used when saving source-collect output.",
+    )
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parents[3]
@@ -316,6 +328,7 @@ def run_source_collect(args: argparse.Namespace) -> dict[str, object]:
             query=query,
             limit_per_source=max(1, args.limit_per_source),
             github_token=os.environ.get("GITHUB_TOKEN"),
+            reddit_subreddits=_csv(args.subreddits or os.environ.get("FORGE_REDDIT_SUBREDDITS", "")),
         )
     )
     seed_topics = synthesize_seed_topics(media_items, max_topics=max(1, args.max_topics))
@@ -368,7 +381,11 @@ def run_source_collect(args: argparse.Namespace) -> dict[str, object]:
         }
 
     if args.save:
-        summary["supabase"] = SupabaseWriter().save_source_collection(result)
+        summary["supabase"] = SupabaseWriter().save_source_collection(
+            result,
+            project_id=args.project_id,
+            trigger=args.trigger,
+        )
     elif not args.dry_run:
         summary["note"] = "Dry-run by default. Pass --save to write to Supabase."
     return summary
@@ -380,6 +397,10 @@ def _count_sources(media_items: list[object]) -> dict[str, int]:
         source = getattr(item, "source", "unknown")
         counts[source] = counts.get(source, 0) + 1
     return counts
+
+
+def _csv(value: str) -> tuple[str, ...]:
+    return tuple(item.strip() for item in value.split(",") if item.strip())
 
 
 if __name__ == "__main__":

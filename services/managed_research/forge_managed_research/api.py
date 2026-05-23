@@ -343,6 +343,7 @@ def _background_discovery_run(project_id: str, run_id: str, payload: dict[str, A
                 query=query,
                 limit_per_source=limit_per_source,
                 github_token=os.environ.get("GITHUB_TOKEN"),
+                reddit_subreddits=_csv_env(os.environ.get("FORGE_REDDIT_SUBREDDITS", "")),
             )
         )
         seed_topics = synthesize_seed_topics(media_items, max_topics=5)
@@ -355,6 +356,7 @@ def _background_discovery_run(project_id: str, run_id: str, payload: dict[str, A
                     query=fallback_query,
                     limit_per_source=max(5, limit_per_source),
                     github_token=os.environ.get("GITHUB_TOKEN"),
+                    reddit_subreddits=_csv_env(os.environ.get("FORGE_REDDIT_SUBREDDITS", "")),
                 )
             )
             seed_topics = synthesize_seed_topics(media_items, max_topics=5)
@@ -368,7 +370,12 @@ def _background_discovery_run(project_id: str, run_id: str, payload: dict[str, A
             signals=signals,
             opportunities=opportunities,
         )
-        source_summary = writer.save_source_collection(source_result, project_id=project_id)
+        pipeline_trigger = "schedule" if payload.get("trigger") == "scheduled" else "manual"
+        source_summary = writer.save_source_collection(
+            source_result,
+            project_id=project_id,
+            trigger=pipeline_trigger,
+        )
 
         research_summary: dict[str, Any] | None = None
         if os.environ.get("FORGE_ENABLE_DEEP_RESEARCH", "0") == "1" and media_items:
@@ -937,6 +944,10 @@ def _discovery_query(project: dict[str, Any]) -> str:
 
 def _fallback_discovery_query(project: dict[str, Any]) -> str:
     return "AI agents developer tools production pain testing observability cost security GitHub issues"
+
+
+def _csv_env(value: str) -> tuple[str, ...]:
+    return tuple(item.strip() for item in value.split(",") if item.strip())
 
 
 def _default_project_name(payload: dict[str, Any]) -> str:
