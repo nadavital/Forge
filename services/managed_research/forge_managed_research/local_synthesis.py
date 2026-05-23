@@ -53,7 +53,7 @@ def synthesize_signals(media_items: list[MediaItem]) -> list[ManagedSignal]:
         if item.source == "collector_error":
             continue
         text = item.summary or item.captured_text or item.title
-        bucket = _best_bucket(text)
+        bucket = _best_bucket(f"{text} {' '.join(item.tags)}")
         signals.append(
             ManagedSignal(
                 source=item.source,
@@ -61,7 +61,7 @@ def synthesize_signals(media_items: list[MediaItem]) -> list[ManagedSignal]:
                 body=text,
                 url=item.url,
                 published_at=item.published_at,
-                tags=[*item.tags, "collected_media"],
+                tags=[*item.tags, bucket, "collected_media"],
                 metadata={
                     **item.metadata,
                     "pipeline": "source_collect",

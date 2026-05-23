@@ -203,6 +203,7 @@ class ManagedAgentClient:
         if not interaction_id:
             return getattr(interaction, "output_text", "") or str(interaction)
 
+        print(f"deep_research: interaction_id={interaction_id}", flush=True)
         deadline = time.time() + timeout_seconds
         while time.time() < deadline:
             try:
@@ -211,6 +212,7 @@ class ManagedAgentClient:
                 current = self.client.interactions.get(name=interaction_id)
             state = getattr(current, "state", None) or getattr(current, "status", None)
             state_text = str(state).lower()
+            print(f"deep_research: state={state_text}", flush=True)
             if "completed" in state_text or "succeeded" in state_text:
                 return getattr(current, "output_text", "") or str(current)
             if "failed" in state_text or "cancelled" in state_text:

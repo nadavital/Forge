@@ -218,11 +218,15 @@ The API implements the project-scoped dashboard contract in `docs/FRONTEND_BACKE
 
 Long-running project analysis, discovery, and build work is launched as FastAPI background tasks. The frontend should render the returned `in_progress` records and refresh via polling or Supabase Realtime.
 
-Discovery runs use deterministic public collection first, then opportunity clustering. By default, the backend attempts a managed Bull/Bear/Decision/Synthesizer pass on the top cluster. Set this to skip managed evaluation during quota-sensitive development:
+Discovery runs use deterministic public collection first, then opportunity clustering. By default, the backend uses the fast local source-research and fallback Bull/Bear/Synthesizer path so the dashboard always receives recommended opportunities. Enable managed research/evaluation explicitly when quota and latency allow:
 
 ```bash
-FORGE_ENABLE_MANAGED_EVAL=0
+FORGE_ENABLE_DEEP_RESEARCH=1
+FORGE_RESEARCH_AGENT=antigravity
+FORGE_ENABLE_MANAGED_EVAL=1
 ```
+
+Use `FORGE_RESEARCH_AGENT=deep-research` only when a slow cited report is worth waiting for. Deep Research can take many minutes. Managed-agent failures are stored as non-blocking metadata and the pipeline continues with local fallback artifacts.
 
 Build records currently prepare and persist the Antigravity builder prompt context required by the contract. The final adapter that asks Antigravity to create a branch/PR in the project repo is still the next backend step.
 

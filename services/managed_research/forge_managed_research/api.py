@@ -20,6 +20,8 @@ from .local_synthesis import (
     synthesize_signals,
 )
 from .schemas import SourceCollectionResult
+from .schemas import BullBearEvaluation
+from .schemas import TrendResearchPipelineResult
 from .supabase import SupabaseWriter
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -333,16 +335,30 @@ def _background_discovery_run(project_id: str, run_id: str, payload: dict[str, A
         project = _project_response(writer, project_id)
         query = _discovery_query(project)
         _set_project_run_stage(writer, run_id, "signal_collection")
+        limit_per_source = int(payload.get("limit_per_source") or 10)
         media_items = collect_public_media(
             CollectorConfig(
                 query=query,
-                limit_per_source=int(payload.get("limit_per_source") or 10),
+                limit_per_source=limit_per_source,
                 github_token=os.environ.get("GITHUB_TOKEN"),
             )
         )
         seed_topics = synthesize_seed_topics(media_items, max_topics=5)
         signals = synthesize_signals(media_items)
         opportunities = synthesize_opportunities(media_items, signals, max_opportunities=8)
+        if not signals or not opportunities:
+            fallback_query = _fallback_discovery_query(project)
+            media_items = collect_public_media(
+                CollectorConfig(
+                    query=fallback_query,
+                    limit_per_source=max(5, limit_per_source),
+                    github_token=os.environ.get("GITHUB_TOKEN"),
+                )
+            )
+            seed_topics = synthesize_seed_topics(media_items, max_topics=5)
+            signals = synthesize_signals(media_items)
+            opportunities = synthesize_opportunities(media_items, signals, max_opportunities=8)
+            query = fallback_query
         source_result = SourceCollectionResult(
             query=query,
             media_items=media_items,
@@ -352,6 +368,54 @@ def _background_discovery_run(project_id: str, run_id: str, payload: dict[str, A
         )
         source_summary = writer.save_source_collection(source_result, project_id=project_id)
 
+        research_summary: dict[str, Any] | None = None
+        if os.environ.get("FORGE_ENABLE_DEEP_RESEARCH", "0") == "1" and media_items:
+            research_agent = os.environ.get("FORGE_RESEARCH_AGENT", "antigravity")
+            research_agent = "deep-research" if research_agent == "deep-research" else "antigravity"
+            try:
+                topic = seed_topics[0].topic if seed_topics else query
+                client = ManagedAgentClient(api_key=os.environ.get("GEMINI_API_KEY"))
+                research_raw = client.run_research_analyst(
+                    topic,
+                    media_items=media_items[:8],
+                    agents_dir=AGENTS_DIR,
+                    agent=research_agent,
+                    timeout_seconds=int(os.environ.get("FORGE_DEEP_RESEARCH_TIMEOUT_SECONDS", "120")),
+                )
+                from .extract import extract_json_object, extract_json_payload
+
+                research_payload = extract_json_payload(research_raw)
+                raw_research_payload = extract_json_object(
+                    research_raw,
+                    required_any=("research_findings", "signals", "opportunities"),
+                )
+                if "research_findings" in raw_research_payload:
+                    research_payload["research_findings"] = raw_research_payload["research_findings"]
+                trend_research = TrendResearchPipelineResult.from_payloads(
+                    topic=topic,
+                    trend_payload={"media_items": [item.to_metadata() for item in media_items[:8]]},
+                    trend_raw_text="project source collection",
+                    trend_agent="public_collectors",
+                    research_payload=research_payload,
+                    research_raw_text=research_raw,
+                    research_agent=research_agent,
+                )
+                research_summary = writer.save_trend_research(trend_research, project_id=project_id)
+            except Exception as exc:  # managed-agent quota/latency should not kill discovery
+                research_summary = {
+                    "status": "failed_non_blocking",
+                    "agent": research_agent,
+                    "error": str(exc),
+                }
+        else:
+            research_summary = {
+                "status": "local_source_research",
+                "agent": "deterministic_public_collectors",
+                "media_items": len(media_items),
+                "signals": len(signals),
+                "opportunities": len(opportunities),
+            }
+
         _set_project_run_stage(writer, run_id, "opportunity_clustering")
         records, signals_by_id = writer.fetch_opportunity_records(limit=100)
         records = [record for record in records if record.project_id == project_id]
@@ -359,9 +423,14 @@ def _background_discovery_run(project_id: str, run_id: str, payload: dict[str, A
         cluster_summary = writer.save_opportunity_clusters(clusters, project_id=project_id)
 
         eval_summary: dict[str, Any] | None = None
-        if clusters and os.environ.get("FORGE_ENABLE_MANAGED_EVAL", "1") == "1":
+        if clusters and os.environ.get("FORGE_ENABLE_MANAGED_EVAL", "0") == "1":
             _set_project_run_stage(writer, run_id, "bull_bear")
-            evaluation = _run_managed_evaluation(clusters[0], AGENTS_DIR)
+            try:
+                if os.environ.get("FORGE_FORCE_LOCAL_EVAL") == "1":
+                    raise RuntimeError("Managed evaluation disabled by FORGE_FORCE_LOCAL_EVAL.")
+                evaluation = _run_managed_evaluation(clusters[0], AGENTS_DIR)
+            except Exception as exc:
+                evaluation = _fallback_bull_bear_evaluation(clusters[0], exc)
             eval_summary = writer.save_bull_bear_evaluation(evaluation, project_id=project_id)
             writer.update(
                 "opportunities",
@@ -370,12 +439,24 @@ def _background_discovery_run(project_id: str, run_id: str, payload: dict[str, A
             )
             _set_project_run_stage(writer, run_id, "synthesis")
         elif clusters:
+            fallback_eval_summaries = []
             for cluster in clusters:
+                evaluation = _fallback_bull_bear_evaluation(
+                    cluster,
+                    RuntimeError("Managed evaluation disabled for fast pipeline."),
+                )
+                fallback_eval_summaries.append(
+                    writer.save_bull_bear_evaluation(evaluation, project_id=project_id)
+                )
                 writer.update(
                     "opportunities",
                     f"id=eq.{cluster.representative_opportunity_id}",
                     {"status": "recommended", "updated_at": _now()},
                 )
+            eval_summary = {
+                "status": "local_fallback",
+                "evaluations": fallback_eval_summaries,
+            }
 
         summary = (
             f"Collected {len(media_items)} media items, created {len(opportunities)} opportunities, "
@@ -388,6 +469,7 @@ def _background_discovery_run(project_id: str, run_id: str, payload: dict[str, A
             summary,
             metadata={
                 "source_collection": source_summary,
+                "deep_research": research_summary,
                 "opportunity_clustering": cluster_summary,
                 "bull_bear": eval_summary,
             },
@@ -431,6 +513,65 @@ def _background_build(build_id: str) -> None:
             f"id=eq.{build_id}",
             {"status": "failed", "stage": "failed", "error": str(exc), "completed_at": _now()},
         )
+
+
+def _fallback_bull_bear_evaluation(cluster, exc: Exception) -> BullBearEvaluation:
+    return BullBearEvaluation(
+        cluster=cluster,
+        bull={
+            "position": "bull",
+            "summary": (
+                f"{cluster.canonical_title} has enough linked public evidence to prototype. "
+                "The MVP is narrow and can be validated without paid services."
+            ),
+            "why_real_pain": [cluster.problem],
+            "why_now": ["Developers are moving AI agent workflows from demos into production."],
+            "adoption_case": ["A local tool can be tried without replacing the user's stack."],
+            "smallest_convincing_mvp": cluster.mvp_concept,
+            "supporting_evidence_urls": [signal.url for signal in cluster.evidence if signal.url][:5],
+            "confidence": min(0.75, cluster.score),
+            "risks_to_watch": ["Managed evaluation was unavailable; human review should treat this as provisional."],
+        },
+        bear={
+            "position": "bear",
+            "summary": (
+                "The evidence is directional rather than conclusive, and the opportunity may overlap "
+                "with existing developer tooling."
+            ),
+            "why_might_be_noise": ["Public-source signals may overrepresent vocal developer pain."],
+            "adoption_risks": ["The MVP must avoid becoming a generic platform."],
+            "existing_alternatives": ["Manual scripts", "framework-specific tooling", "observability dashboards"],
+            "scope_traps": ["Supporting too many agent frameworks in the first prototype."],
+            "missing_evidence": ["Direct user interviews", "competitive pricing evidence"],
+            "confidence": 0.62,
+        },
+        decision={
+            "recommendation": "prototype",
+            "summary": "Proceed with a narrow prototype, but label this as fallback-evaluated.",
+            "confidence": min(0.72, cluster.score),
+            "required_mvp_constraints": ["Local-first", "No paid APIs", "README and smoke test required"],
+            "next_action": "Prepare a build prompt for a tightly scoped prototype.",
+            "approval_needed": True,
+            "evidence_gaps": ["Managed Bull/Bear evaluation failed and should be rerun when quota is available."],
+        },
+        synthesis={
+            "product_pitch": (
+                f"{cluster.canonical_title} helps {cluster.target_user} address: {cluster.problem} "
+                f"The first MVP is: {cluster.mvp_concept}"
+            ),
+            "target_user": cluster.target_user,
+            "mvp_scope": [cluster.mvp_concept],
+            "non_goals": ["Production deployment", "Paid API integrations", "Broad platform support"],
+            "builder_system_prompt": (
+                f"Build a local runnable prototype for {cluster.canonical_title}. "
+                f"Problem: {cluster.problem}. MVP: {cluster.mvp_concept}. "
+                "Use free/local dependencies only. Include README, setup/run instructions, and one smoke test."
+            ),
+            "builder_readiness": "ready",
+            "confidence": min(0.72, cluster.score),
+        },
+        raw_outputs={"managed_error": str(exc)},
+    )
 
 
 def _project_response(writer: SupabaseWriter, project_id: str) -> dict[str, Any]:
@@ -718,6 +859,10 @@ def _discovery_query(project: dict[str, Any]) -> str:
         "developer pain market signals GitHub issues",
     ]
     return " ".join(str(part) for part in parts if part)[:300]
+
+
+def _fallback_discovery_query(project: dict[str, Any]) -> str:
+    return "AI agents developer tools production pain testing observability cost security GitHub issues"
 
 
 def _default_project_name(payload: dict[str, Any]) -> str:

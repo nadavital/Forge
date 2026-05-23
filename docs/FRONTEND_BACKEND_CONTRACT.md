@@ -675,6 +675,7 @@ Implemented now:
 - Public source collection.
 - Opportunity clustering.
 - Bull/Bear/Decision/Synthesizer managed-agent evaluation.
+- Fast fallback research/evaluation path that still returns Bull/Bear/Synthesizer-shaped artifacts when managed agents are slow or quota-limited.
 - Supabase writes to existing ingestion/evaluation tables.
 - Dashboard API routes under `forge_managed_research.api`.
 - Project, schedule, run, action, and build migration in `supabase/migrations/0002_dashboard_contract.sql`.
