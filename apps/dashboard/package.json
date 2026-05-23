@@ -8,6 +8,7 @@
     "start": "next start",
     "build": "next build",
     "lint": "next lint",
+    "test:contracts": "node --test lib/*.test.ts",
     "typecheck": "find .next -name '* 2.*' -delete 2>/dev/null; tsc --noEmit",
     "seed:reset": "rm -rf .forge-data"
   },

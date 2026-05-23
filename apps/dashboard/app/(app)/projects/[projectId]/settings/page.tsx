@@ -5,6 +5,8 @@ import { ReflectionPanel } from "@/components/settings/ReflectionPanel";
 import { loadDashboardProject, loadProjectSettings } from "@/lib/dashboard-data";
 import { loadReflectionProposals } from "@/lib/forge-data";
 
+export const dynamic = "force-dynamic";
+
 type ProjectSettingsPageProps = {
   params: Promise<{ projectId: string }>;
   searchParams: Promise<{ welcome?: string }>;

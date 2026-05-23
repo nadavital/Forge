@@ -5,6 +5,8 @@ import { ProjectHeader } from "@/components/projects/ProjectHeader";
 import { loadDashboardProject } from "@/lib/dashboard-data";
 import { plural } from "@/lib/decision";
 
+export const dynamic = "force-dynamic";
+
 type ProjectPageProps = {
   params: Promise<{ projectId: string }>;
 };

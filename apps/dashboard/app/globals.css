@@ -559,6 +559,13 @@ dt {
   background: rgba(255, 255, 255, 0.88);
 }
 
+.btn-danger {
+  margin-top: 16px;
+  background: var(--red-soft);
+  color: var(--red);
+  box-shadow: none;
+}
+
 /* ── Opportunity cards ── */
 
 .card-grid {
@@ -932,6 +939,34 @@ dt {
   padding: 12px 14px;
 }
 
+.settings-fields textarea,
+.field-input:is(textarea) {
+  resize: vertical;
+}
+
+.field-with-icon {
+  position: relative;
+}
+
+.field-with-icon svg {
+  position: absolute;
+  top: 50%;
+  left: 14px;
+  width: 17px;
+  height: 17px;
+  color: var(--faint);
+  transform: translateY(-50%);
+}
+
+.field-with-icon .field-input,
+.settings-field-icon input {
+  padding-left: 42px;
+}
+
+.settings-field-icon svg {
+  top: 22px;
+}
+
 .settings-rows.editable select {
   border: 0;
   border-radius: var(--radius-pill);
@@ -1168,6 +1203,11 @@ dt {
   gap: 18px;
 }
 
+.onboarding-fields {
+  display: grid;
+  gap: 12px;
+}
+
 .onboarding-panel {
   padding: 28px;
 }
@@ -1315,6 +1355,10 @@ dt {
   font-weight: 600;
 }
 
+.danger-card {
+  border: 1px solid rgba(179, 38, 30, 0.12);
+}
+
 .settings-desc {
   margin-top: 4px;
   color: var(--muted);
@@ -1328,6 +1372,49 @@ dt {
   margin-top: 16px;
   list-style: none;
   padding: 0;
+}
+
+.settings-checklist {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+  list-style: none;
+  padding: 0;
+}
+
+.settings-checklist li {
+  display: flex;
+  gap: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-container);
+  padding: 14px 16px;
+}
+
+.settings-checklist .check-complete,
+.settings-checklist .check-pending {
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  flex-shrink: 0;
+}
+
+.settings-checklist .check-complete {
+  color: var(--green);
+}
+
+.settings-checklist .check-pending {
+  color: var(--faint);
+}
+
+.settings-checklist strong {
+  display: block;
+  font-size: 14px;
+}
+
+.settings-checklist span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .settings-rows li {

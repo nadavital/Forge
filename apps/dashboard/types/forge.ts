@@ -72,7 +72,20 @@ export type ReviewAction = "approve" | "watch" | "reject" | "research_more";
 export type ProjectMode = "connected_product" | "new_product" | "sample_project";
 
 export type ProjectSettingsView = {
-  repoUrl?: string | null;
+  project: {
+    repoUrl: string;
+    productUrl: string;
+    description: string;
+  };
+  onboarding: {
+    status: "complete" | "needs_setup";
+    checklist: Array<{
+      id: string;
+      label: string;
+      description: string;
+      complete: boolean;
+    }>;
+  };
   sources: Array<{ id: string; name: string; type: string; status: string }>;
   triggers: Array<{ id: string; name: string; type: string; status: string }>;
   preferences: {
