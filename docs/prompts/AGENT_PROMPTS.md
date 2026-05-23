@@ -4,63 +4,111 @@ These are behavioral contracts, not production prompts. Production prompts shoul
 
 General rules for every role:
 
-- Use only supplied source material unless explicitly marking an inference.
+- Use supplied source material and explicit preference data unless marking an inference.
 - Preserve source IDs for claims.
 - Prefer `unknown` over invented market facts.
 - Return structured data that can be validated.
 - Keep outputs concise enough for downstream agents to inspect.
+- Do not select paid APIs, production deploys, or secret-requiring integrations for v1 generated MVPs.
 
-## TrendScout
+## SignalCollector
 
-Extract concrete developer pain from normalized source records. Prefer repeated operational problems over generic complaints.
+Normalize manual ideas and public source records into product opportunity signals. Preserve provenance, source URL, source ID, author, timestamp, and raw text when allowed.
 
 Return structured output with:
 
-- problem statement
-- affected persona
-- evidence summary
-- source IDs
-- urgency score
-- frequency score
-- novelty score
+- source
+- source ID
+- title
+- body
+- URL
+- timestamp
 - tags
+- provenance metadata
 
-## ResearchAnalyst
+## PreferenceModeler
 
-Deepen the evidence pack for a candidate opportunity using supplied records and any explicitly enabled tools. Every factual claim must trace back to a source ID or be marked as an inference.
+Combine explicit preference profile fields with behavior events. Make a compact scoring context for opportunity ranking.
 
 Return structured output with:
 
-- root causes
-- current workarounds
-- adjacent products
-- technical constraints
-- evidence gaps
+- preferred markets
+- preferred buyers
+- excluded categories
+- risk tolerance
+- stack preferences
+- inferred preference adjustments
+- negative signals from rejections
+- positive signals from approvals and launches
+
+## OpportunityScout
+
+Propose and rank product opportunities that could become small runnable MVPs. Use the preference context and signal evidence. Prefer ideas that can be prototyped quickly and convincingly.
+
+Return structured output with:
+
+- title
+- problem
+- target user
+- MVP concept
 - source IDs
+- fit score
+- feasibility score
+- novelty score
+- evidence score
+- score rationale
 
-## MarketAnalyst
+## Critic
 
-Evaluate commercial potential conservatively. Do not claim willingness to pay unless the source material supports it.
+Challenge the opportunity before it reaches approval. Focus on weak evidence, buyer ambiguity, implementation risk, scope creep, and mismatch with user preferences.
 
 Return structured output with:
 
-- buyer hypothesis
-- user persona
-- budget source
-- alternatives
-- market wedge
-- willingness-to-pay evidence
-- distribution hypothesis
-- risks
+- blocking concerns
+- non-blocking concerns
+- suggested scope reductions
+- evidence gaps
+- score adjustments
 
-## BullAgent
+## BuildBriefGenerator
 
-Argue the strongest credible case for building around the opportunity. Cite evidence. Do not ignore risks; explain why they may be manageable.
+Create an internal build brief only after a human approves an opportunity. The brief should be enough for a managed builder to produce a PR-ready MVP without further planning approval.
 
-## BearAgent
+Return structured output with:
 
-Argue the strongest credible case against building around the opportunity. Attack weak evidence, buyer ambiguity, market size, competition, timing, technical complexity, and distribution.
+- approved opportunity ID
+- product summary
+- target user
+- MVP scope
+- non-goals
+- suggested implementation approach
+- allowed services
+- prohibited services
+- acceptance checks
+- generated PR title
 
-## Synthesizer
+## ManagedBuilder
 
-Reconcile evidence and debate into a thesis draft. Distinguish facts from inferences. Include unresolved uncertainty and next validation steps. Output Markdown plus JSON that the dashboard can render and filter.
+Run in an Antigravity sandbox. Create a generated repository from the template repo, build the MVP, and open a PR.
+
+Required behavior:
+
+- Stay within the approved opportunity and build brief.
+- Use whatever stack fits the product.
+- Use code and free services only.
+- Do not use paid APIs, production deployments, or secret-requiring integrations.
+- Document any free external services used.
+- Open PR title as `Build MVP: <opportunity title>`.
+
+## BuildReviewer
+
+Review generated MVP output before Forge marks the build complete.
+
+Required checks:
+
+- README exists.
+- Setup and run instructions exist.
+- Basic tests or smoke checks exist.
+- Product MVP is explained.
+- Free external services are listed if used.
+- No service-role keys, paid API keys, or production credentials are committed.
