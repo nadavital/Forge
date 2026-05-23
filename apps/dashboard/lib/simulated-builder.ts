@@ -5,6 +5,7 @@ import {
   updateMvpBuild,
   updateOpportunityStatus
 } from "@/lib/db/repository";
+import { reviewBuildArtifacts } from "@/lib/build/reviewer";
 import type { DbMvpBuild } from "@/lib/db/types";
 
 const SIMULATED_REPO = "https://github.com/forge-labs/generated-mvp";
@@ -33,7 +34,7 @@ export async function runSimulatedBuilder(input: {
     logs: "Simulated builder completed. BuildReviewer passed README, run instructions, and smoke checks."
   });
 
-  await insertBuildArtifacts(input.build.id, [
+  const artifacts = [
     {
       artifact_type: "readme",
       content: `# ${title}\n\nGenerated MVP for ${title}. Includes setup flow, demo path, and smoke checks.`
@@ -49,6 +50,16 @@ export async function runSimulatedBuilder(input: {
     {
       artifact_type: "service_manifest",
       content: "Uses free-tier services only. No production deploy hooks included."
+    }
+  ];
+  const review = reviewBuildArtifacts(artifacts);
+
+  await insertBuildArtifacts(input.build.id, [
+    ...artifacts,
+    {
+      artifact_type: "build_review",
+      content: review.summary,
+      metadata: { missing: review.missing }
     }
   ]);
 

@@ -99,6 +99,15 @@ export function OpportunityDetail({ opportunity, projectId, projectName }: Oppor
               <p>{narrative.mvp}</p>
             </div>
 
+            {narrative.prototypes && narrative.prototypes.length > 0 ? (
+              <div className="response-mvp">
+                <span className="response-label">Prototype option</span>
+                <p>
+                  {narrative.prototypes[0].title} · {narrative.prototypes[0].status}
+                </p>
+              </div>
+            ) : null}
+
             {narrative.signalCount > 0 ? (
               <div className="response-signals">
                 <button

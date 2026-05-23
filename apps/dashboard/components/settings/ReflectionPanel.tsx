@@ -1,24 +1,36 @@
 "use client";
 
 import { useTransition } from "react";
-import { resolveReflection } from "@/app/actions/reflection";
+import { generateReflection, resolveReflection } from "@/app/actions/reflection";
 import type { ReflectionProposal } from "@/types/forge";
 
 type ReflectionPanelProps = {
   proposals: ReflectionProposal[];
+  projectId?: string;
 };
 
-export function ReflectionPanel({ proposals }: ReflectionPanelProps) {
+export function ReflectionPanel({ proposals, projectId }: ReflectionPanelProps) {
   const [isPending, startTransition] = useTransition();
   const open = proposals.filter((proposal) => proposal.status === "proposed");
 
   if (open.length === 0) {
     return (
       <section className="settings-card">
-        <h2>Reflection proposals</h2>
+        <div className="settings-card-header">
+          <h2>Reflection proposals</h2>
+          <button className="btn btn-secondary" disabled={isPending} onClick={() => run()} type="button">
+            Run reflection
+          </button>
+        </div>
         <p className="settings-empty">No open Forge self-improvement proposals.</p>
       </section>
     );
+  }
+
+  function run() {
+    startTransition(async () => {
+      await generateReflection({ projectId });
+    });
   }
 
   function decide(proposal: ReflectionProposal, decision: "accepted" | "rejected") {
@@ -29,7 +41,12 @@ export function ReflectionPanel({ proposals }: ReflectionPanelProps) {
 
   return (
     <section className="settings-card">
-      <h2>Reflection proposals</h2>
+      <div className="settings-card-header">
+        <h2>Reflection proposals</h2>
+        <button className="btn btn-secondary" disabled={isPending} onClick={() => run()} type="button">
+          Run reflection
+        </button>
+      </div>
       <p className="settings-desc">Review-required changes Forge wants to make to its own behavior.</p>
       <ul className="reflection-list">
         {open.map((proposal) => (

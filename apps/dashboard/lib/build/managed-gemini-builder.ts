@@ -5,6 +5,7 @@ import {
 } from "@/lib/db/repository";
 import type { DbBuildArtifact, DbMvpBuild, JsonObject } from "@/lib/db/types";
 import { createManagedBuilderPrompt, type BuildBrief } from "@/lib/build/brief";
+import { reviewBuildArtifacts } from "@/lib/build/reviewer";
 
 const INTERACTIONS_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/interactions";
 const DEFAULT_AGENT = "antigravity-preview-05-2026";
@@ -53,6 +54,20 @@ export async function runManagedGeminiBuilder(input: {
       throw new Error("Managed builder finished without returning a pull request URL.");
     }
 
+    const artifacts = normalizeArtifacts(report);
+    const review = reviewBuildArtifacts(artifacts);
+    if (!review.passed) {
+      await insertBuildArtifacts(input.build.id, [
+        ...artifacts,
+        {
+          artifact_type: "build_review",
+          content: review.summary,
+          metadata: { missing: review.missing }
+        }
+      ]);
+      throw new Error(review.summary);
+    }
+
     await updateMvpBuild(input.build.id, {
       status: "reviewing",
       generated_repo_url: report.generated_repo_url || input.brief.project.repo_url,
@@ -61,7 +76,14 @@ export async function runManagedGeminiBuilder(input: {
       logs: report.logs || "Managed builder returned PR metadata. BuildReviewer artifacts recorded."
     });
 
-    await insertBuildArtifacts(input.build.id, normalizeArtifacts(report));
+    await insertBuildArtifacts(input.build.id, [
+      ...artifacts,
+      {
+        artifact_type: "build_review",
+        content: review.summary,
+        metadata: { missing: review.missing }
+      }
+    ]);
 
     await updateMvpBuild(input.build.id, {
       status: "completed",

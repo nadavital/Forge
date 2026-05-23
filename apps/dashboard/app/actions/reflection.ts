@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { recordPreferenceEvent, resolveReflectionProposal } from "@/lib/db/repository";
+import { runReflection } from "@/lib/reflection/reflection-engine";
 
 type ResolveReflectionInput = {
   proposalId: string;
@@ -24,5 +25,19 @@ export async function resolveReflection({ proposalId, projectId, decision }: Res
   return {
     ok: true as const,
     message: decision === "accepted" ? "Reflection proposal accepted." : "Reflection proposal rejected."
+  };
+}
+
+export async function generateReflection(input: { projectId?: string } = {}) {
+  const result = await runReflection({ projectId: input.projectId });
+
+  revalidatePath("/settings");
+  if (input.projectId) {
+    revalidatePath(`/projects/${input.projectId}/settings`);
+  }
+
+  return {
+    ok: true as const,
+    message: `Reflection complete. Created ${result.proposalCount} proposal${result.proposalCount === 1 ? "" : "s"}.`
   };
 }
