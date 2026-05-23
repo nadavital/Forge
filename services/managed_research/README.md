@@ -228,7 +228,14 @@ FORGE_ENABLE_MANAGED_EVAL=1
 
 Use `FORGE_RESEARCH_AGENT=deep-research` only when a slow cited report is worth waiting for. Deep Research can take many minutes. Managed-agent failures are stored as non-blocking metadata and the pipeline continues with local fallback artifacts.
 
-Build records currently prepare and persist the Antigravity builder prompt context required by the contract. The final adapter that asks Antigravity to create a branch/PR in the project repo is still the next backend step.
+Build records prepare and persist the Antigravity builder prompt context required by the contract. By default the endpoint records deterministic simulated PR metadata so local dashboard flows stay runnable. Enable the real Gemini managed builder explicitly when the target repo and credentials are ready:
+
+```bash
+FORGE_ENABLE_MANAGED_BUILDER=1
+GEMINI_API_KEY=...
+```
+
+The managed builder is instructed to build in the project `repo_url`, open a PR titled `Build MVP: <opportunity title>`, and return JSON PR metadata for validation before Forge marks the build complete.
 
 ## Honest Limits
 
@@ -238,4 +245,4 @@ Build records currently prepare and persist the Antigravity builder prompt conte
 - Source/API limits still apply. Use `GITHUB_TOKEN` for GitHub. Add source-specific auth when a public source becomes limiting.
 - Bull/Bear/Synthesizer uses managed agents where available, but the deterministic clustering step should run first to avoid wasting quota on duplicate opportunities.
 - The dashboard API needs `0002_dashboard_contract.sql` applied before project routes can persist data.
-- The Antigravity build endpoint creates a verifiable build record and prompt context; real PR creation still needs the managed-builder adapter.
+- The Antigravity build endpoint validates that a PR URL is returned before marking a managed build complete.

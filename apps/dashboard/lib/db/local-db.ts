@@ -13,10 +13,6 @@ function cloneSeed(): ForgeStore {
 }
 
 async function ensureStoreFile(): Promise<ForgeStore> {
-  if (memoryStore) {
-    return memoryStore;
-  }
-
   try {
     await fs.mkdir(STORE_DIR, { recursive: true });
     const raw = await fs.readFile(STORE_PATH, "utf8");

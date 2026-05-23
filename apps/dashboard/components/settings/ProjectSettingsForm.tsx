@@ -29,6 +29,7 @@ export function ProjectSettingsForm({ projectId, settings }: ProjectSettingsForm
         riskTolerance: String(formData.get("riskTolerance") ?? settings.preferences.riskTolerance),
         markets: String(formData.get("markets") ?? settings.preferences.markets.join(", ")),
         notes: String(formData.get("notes") ?? settings.preferences.notes),
+        repoUrl: String(formData.get("repoUrl") ?? settings.repoUrl ?? ""),
         sourceStatuses,
         triggerStatuses
       });
@@ -40,6 +41,19 @@ export function ProjectSettingsForm({ projectId, settings }: ProjectSettingsForm
       <section className="settings-card">
         <h2>Sources</h2>
         <p className="settings-desc">Inputs that feed ranking and research for this project.</p>
+        <div className="settings-fields">
+          <label className="field-label" htmlFor="repoUrl">
+            GitHub repository
+          </label>
+          <input
+            autoComplete="off"
+            defaultValue={settings.repoUrl ?? ""}
+            disabled={isPending}
+            id="repoUrl"
+            name="repoUrl"
+            placeholder="https://github.com/rkibel/auto-drone"
+          />
+        </div>
         <ul className="settings-rows editable">
           {settings.sources.map((source) => (
             <li key={source.id}>

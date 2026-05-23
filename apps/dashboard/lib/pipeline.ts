@@ -1,19 +1,77 @@
-import { completePipelineRun, createPipelineRun } from "@/lib/db/repository";
+import {
+  completePipelineRun,
+  createPipelineRun,
+  getProjectBundle,
+  replaceProjectDiscoveryRecords,
+  updateProjectRepository
+} from "@/lib/db/repository";
+import { discoverGitHubRepo } from "@/lib/github/repo-discovery";
+import { discoverNewProductIdeas } from "@/lib/ideas/new-product-discovery";
 
 export async function triggerProjectPipeline(projectId: string): Promise<{ runId: string; message: string }> {
   const run = await createPipelineRun(projectId);
+  const bundle = await getProjectBundle(projectId);
+  const repoUrl = bundle.project?.repo_url || githubSourceRepoUrl(bundle.sources);
+
+  if (repoUrl) {
+    const discovery = await discoverGitHubRepo(repoUrl);
+    await updateProjectRepository({
+      projectId,
+      repoUrl: discovery.repoUrl,
+      productContext: discovery.productContext
+    });
+    await replaceProjectDiscoveryRecords({
+      projectId,
+      runId: run.id,
+      signals: discovery.signals,
+      opportunities: discovery.opportunities
+    });
+
+    await completePipelineRun(run.id, {
+      source: "github",
+      repo_url: discovery.repoUrl,
+      digest_summary: `Imported ${discovery.projectName} and generated ${discovery.opportunities.length} repo-specific opportunities.`,
+      changes: [
+        `Collected ${discovery.signals.length} GitHub repo signals`,
+        `Ranked ${discovery.opportunities.length} opportunities from README and issue context`,
+        "Build briefs will target the connected repository"
+      ]
+    });
+
+    return {
+      runId: run.id,
+      message: `Pipeline run completed for ${discovery.projectName}. Refresh to review repo-specific ideas.`
+    };
+  }
+
+  const discovery = discoverNewProductIdeas({
+    projectName: bundle.project?.name ?? "New product",
+    preferences: bundle.preferences
+  });
+  await replaceProjectDiscoveryRecords({
+    projectId,
+    runId: run.id,
+    signals: discovery.signals,
+    opportunities: discovery.opportunities
+  });
 
   await completePipelineRun(run.id, {
-    source: "dashboard",
-    digest_summary: "Manual run completed. Existing opportunities were re-ranked against the latest preference profile.",
+    source: "new_product_seed",
+    digest_summary: `Seeded ${discovery.opportunities.length} new-product directions from your preference profile.`,
     changes: [
-      "Re-scored open opportunities against current taste notes",
-      "No new external signals ingested in simulated manual run"
+      `Generated ${discovery.signals.length} preference/profile signals`,
+      `Ranked ${discovery.opportunities.length} buildable ideas for review`,
+      "Each idea keeps source origin separate from market evidence"
     ]
   });
 
   return {
     runId: run.id,
-    message: "Pipeline run completed. Refresh to see the updated morning review."
+    message: "Pipeline run completed. Refresh to review seeded product ideas."
   };
+}
+
+function githubSourceRepoUrl(sources: Array<{ source_type: string; config?: Record<string, unknown> }>): string {
+  const source = sources.find((entry) => entry.source_type === "github" && entry.config?.repo_url);
+  return typeof source?.config?.repo_url === "string" ? source.config.repo_url : "";
 }

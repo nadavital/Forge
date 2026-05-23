@@ -2,7 +2,9 @@ from forge_managed_research.api import (
     PIPELINE_STAGES,
     RUN_STATUSES,
     _build_prompt_context,
+    _parse_builder_report,
     _run_response,
+    _simulated_builder_report,
 )
 
 
@@ -61,3 +63,28 @@ def test_build_prompt_context_prioritizes_user_notes():
     assert context["user_notes"] == "request note"
     assert context["saved_user_notes"] == "saved note"
     assert context["builder_system_prompt"] == "agent prompt"
+
+
+def test_builder_report_parses_fenced_json():
+    report = _parse_builder_report(
+        """Done.
+```json
+{"branch_name":"forge/tool-guard","pr_url":"https://github.com/user/repo/pull/7","summary":"opened"}
+```
+"""
+    )
+
+    assert report["branch_name"] == "forge/tool-guard"
+    assert report["pr_url"].endswith("/pull/7")
+
+
+def test_simulated_builder_report_uses_target_repo():
+    report = _simulated_builder_report(
+        {
+            "id": "123456789",
+            "repo_url": "https://github.com/user/repo",
+        }
+    )
+
+    assert report["branch_name"] == "forge/build-12345678"
+    assert report["pr_url"] == "https://github.com/user/repo/pull/1"

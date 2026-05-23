@@ -8,7 +8,6 @@ import {
 import type { DbMvpBuild } from "@/lib/db/types";
 
 const SIMULATED_REPO = "https://github.com/forge-labs/generated-mvp";
-const SIMULATED_PR = "https://github.com/forge-labs/generated-mvp/pull/1";
 
 export async function runSimulatedBuilder(input: {
   projectId: string;
@@ -18,18 +17,19 @@ export async function runSimulatedBuilder(input: {
   const opportunity = await getOpportunityRecord(input.opportunityId);
   const title = opportunity?.title ?? "Untitled opportunity";
   const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const targetRepo = targetRepoFromBrief(input.build.build_brief) || `${SIMULATED_REPO}-${slug}`;
 
   await updateMvpBuild(input.build.id, { status: "building" });
   await updateMvpBuild(input.build.id, {
     status: "reviewing",
-    generated_repo_url: `${SIMULATED_REPO}-${slug}`,
+    generated_repo_url: targetRepo,
     branch: `forge/${slug}`,
     logs: "Simulated builder: scaffolded repo, generated README, ran smoke checks."
   });
 
   await updateMvpBuild(input.build.id, {
     status: "completed",
-    pr_url: SIMULATED_PR,
+    pr_url: `${targetRepo.replace(/\/$/, "")}/pull/1`,
     logs: "Simulated builder completed. BuildReviewer passed README, run instructions, and smoke checks."
   });
 
@@ -53,6 +53,14 @@ export async function runSimulatedBuilder(input: {
   ]);
 
   await updateOpportunityStatus(input.opportunityId, "built");
+}
+
+function targetRepoFromBrief(brief: unknown): string {
+  if (!brief || typeof brief !== "object") return "";
+  const project = (brief as { project?: unknown }).project;
+  if (!project || typeof project !== "object") return "";
+  const repoUrl = (project as { repo_url?: unknown }).repo_url;
+  return typeof repoUrl === "string" ? repoUrl : "";
 }
 
 export async function queueSimulatedBuild(input: {
