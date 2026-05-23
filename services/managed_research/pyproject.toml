@@ -1,0 +1,17 @@
+[project]
+name = "forge-managed-research"
+version = "0.1.0"
+description = "Gemini managed-agent orchestrator for Forge research and ingestion."
+requires-python = ">=3.10"
+dependencies = [
+    "google-genai>=1.55.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

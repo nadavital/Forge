@@ -37,6 +37,7 @@ Exit criteria:
 - Implement project creation for connected-product and new-product/sample modes.
 - Implement source config and trigger config fixtures before live scheduling.
 - Implement manual opportunity input first.
+- Implement Gemini managed-agent research for public web/repo discovery.
 - Implement the Google ADK ingestion agent for public social and repository signals.
 - Normalize records into `signals`.
 - Combine `user_preferences` and `preference_events` into a scoring context.
@@ -55,6 +56,7 @@ Exit criteria:
 
 - One command ranks fixture opportunities for a sample profile.
 - One command runs the ingestion agent against Hacker News, Reddit, and GitHub sources.
+- One command runs managed-agent research in dry-run mode and extracts structured signals/opportunities.
 - Approvals and rejections create `preference_events`.
 - Ranking changes when preference events change.
 - A product review can be generated from stored opportunities and evaluations.

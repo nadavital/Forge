@@ -115,6 +115,7 @@ The pipeline service owns:
 
 - Project context, source configs, and trigger configs.
 - Source clients, research outputs, and manual-input normalization.
+- Gemini managed-agent orchestration for Deep Research and Antigravity.
 - Google ADK ingestion agent tools for Hacker News, Reddit, and GitHub repository signals.
 - Preference profile and event modeling.
 - Opportunity ranking.
@@ -127,6 +128,8 @@ The pipeline service owns:
 Keep this runnable locally before wrapping it for Google ADK, Vertex AI Agent Engine, or Antigravity.
 
 The first implemented slice is `services/ingestion_agent`, which exposes an ADK `root_agent`, local runner, deployment script, and deterministic tools for collecting signals, extracting pain points, and saving opportunities to Supabase.
+
+The managed-agent research slice is `services/managed_research`. It invokes Gemini managed agents through the Interactions API, validates structured artifacts, and writes to Supabase from Forge-controlled code rather than from inside the sandbox.
 
 ## Projects And Triggers
 
