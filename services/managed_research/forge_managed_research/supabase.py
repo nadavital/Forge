@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from typing import Any
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from .schemas import ManagedResearchResult
@@ -31,16 +32,20 @@ class SupabaseWriter:
                 "Authorization": f"Bearer {self.key}",
             },
         )
-        with urlopen(request, timeout=30) as response:
-            result = json.loads(response.read().decode("utf-8"))
-            return result if isinstance(result, list) else [result]
+        try:
+            with urlopen(request, timeout=30) as response:
+                result = json.loads(response.read().decode("utf-8"))
+                return result if isinstance(result, list) else [result]
+        except HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"Supabase insert failed for {table}: HTTP {exc.code} {body}") from exc
 
     def save(self, result: ManagedResearchResult) -> dict[str, Any]:
         run = self.insert(
             "pipeline_runs",
             [
                 {
-                    "run_type": "research",
+                    "run_type": "managed",
                     "status": "completed",
                     "trigger": "managed_agent",
                     "metadata": {
@@ -96,4 +101,3 @@ class SupabaseWriter:
             "evidence_rows_saved": len(evidence_rows),
             "evaluation_rows_saved": len(evaluation_rows),
         }
-
