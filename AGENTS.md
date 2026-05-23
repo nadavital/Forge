@@ -50,6 +50,7 @@ apps/
   dashboard/         # Internal Forge dashboard
 services/
   agents/            # Agent orchestration and prompt contracts
+  ingestion_agent/   # Google ADK ingestion agent for social/repo signals
   ingestion/         # Source clients and normalization
   builder/           # Simulated and managed builder adapters
   reflection/         # Forge self-improvement proposal generation
@@ -68,7 +69,7 @@ Generated MVP code should not live in this repo. It should be created in separat
 
 Keep the first implementation small. These roles are conceptual boundaries, not a requirement to create multiple independent remote agents on day one.
 
-- `SignalCollector`: gathers or accepts source items and manual ideas.
+- `SignalCollector`: gathers or accepts source items and manual ideas. The first implementation lives in `services/ingestion_agent`.
 - `Researcher`: performs bounded web/social/source research and produces cited digests.
 - `PreferenceModeler`: combines explicit profile data with behavior events.
 - `OpportunityScout`: proposes and ranks product opportunities.

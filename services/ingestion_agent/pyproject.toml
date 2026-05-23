@@ -1,0 +1,19 @@
+[project]
+name = "forge-ingestion-agent"
+version = "0.1.0"
+description = "Google ADK ingestion agent for collecting social and repository pain signals into Supabase."
+requires-python = ">=3.10"
+dependencies = [
+    "google-adk>=1.0.0",
+    "google-cloud-aiplatform[adk,agent_engines]>=1.111.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+

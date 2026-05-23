@@ -2,6 +2,8 @@
 
 Draft contract for the first SQL migration. Prefer boring tables that make product context, opportunity ranking, builder behavior, and Forge self-improvement auditable.
 
+The implemented ingestion migration is `supabase/migrations/0001_ingestion_agent.sql`. It creates the subset needed for the first Google ADK ingestion agent: `pipeline_runs`, `signals`, `opportunities`, `opportunity_signals`, and `opportunity_evaluations`.
+
 ## projects
 
 Stores the product workspace Forge is helping create or iterate on.

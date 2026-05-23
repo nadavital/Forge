@@ -115,6 +115,7 @@ The pipeline service owns:
 
 - Project context, source configs, and trigger configs.
 - Source clients, research outputs, and manual-input normalization.
+- Google ADK ingestion agent tools for Hacker News, Reddit, and GitHub repository signals.
 - Preference profile and event modeling.
 - Opportunity ranking.
 - Taste critique, Bull/Bear evaluation, and Decision Agent output.
@@ -124,6 +125,8 @@ The pipeline service owns:
 - Writes to Supabase.
 
 Keep this runnable locally before wrapping it for Google ADK, Vertex AI Agent Engine, or Antigravity.
+
+The first implemented slice is `services/ingestion_agent`, which exposes an ADK `root_agent`, local runner, deployment script, and deterministic tools for collecting signals, extracting pain points, and saving opportunities to Supabase.
 
 ## Projects And Triggers
 

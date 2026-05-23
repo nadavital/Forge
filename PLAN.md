@@ -37,7 +37,7 @@ Exit criteria:
 - Implement project creation for connected-product and new-product/sample modes.
 - Implement source config and trigger config fixtures before live scheduling.
 - Implement manual opportunity input first.
-- Add one public signal source only after manual fixtures work.
+- Implement the Google ADK ingestion agent for public social and repository signals.
 - Normalize records into `signals`.
 - Combine `user_preferences` and `preference_events` into a scoring context.
 - Rank opportunities by fit, evidence, feasibility, and novelty.
@@ -54,6 +54,7 @@ Good first source options:
 Exit criteria:
 
 - One command ranks fixture opportunities for a sample profile.
+- One command runs the ingestion agent against Hacker News, Reddit, and GitHub sources.
 - Approvals and rejections create `preference_events`.
 - Ranking changes when preference events change.
 - A product review can be generated from stored opportunities and evaluations.

@@ -2,7 +2,7 @@
 
 Forge is a planned product-first agent system. It helps people create and iterate on products by watching configured product inputs, researching the market, debating opportunities, learning the user's taste, and turning approved directions into prototypes or PR-ready MVPs.
 
-This repository is currently a project scaffold. It does not yet contain a working ingestion pipeline, managed builder integration, database migration, dashboard, scheduling loop, or template repo automation.
+This repository is currently an early scaffold. It now contains a first-pass Google ADK ingestion agent for collecting social and repository pain signals into Supabase, but it does not yet contain the managed builder integration, dashboard, or template repo automation.
 
 ## Target Shape
 
@@ -67,3 +67,4 @@ flowchart LR
 - [Data Model](./docs/DATA_MODEL.md)
 - [Prompt Contracts](./docs/prompts/AGENT_PROMPTS.md)
 - [Open Questions](./docs/OPEN_QUESTIONS.md)
+- [Ingestion Agent](./services/ingestion_agent/README.md)
