@@ -67,3 +67,4 @@ flowchart LR
 - [Data Model](./docs/DATA_MODEL.md)
 - [Prompt Contracts](./docs/prompts/AGENT_PROMPTS.md)
 - [Open Questions](./docs/OPEN_QUESTIONS.md)
+- [Managed Research](./services/managed_research/README.md)
