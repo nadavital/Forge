@@ -37,7 +37,7 @@ Exit criteria:
 - Implement project creation for connected-product and new-product/sample modes.
 - Implement source config and trigger config fixtures before live scheduling.
 - Implement manual opportunity input first.
-- Implement Gemini managed-agent research for public web/repo discovery.
+- Implement the managed trend-to-research goal in [Managed Trend Research Goal](./docs/MANAGED_TREND_RESEARCH_GOAL.md): TrendScout retrieves public media/social/repo content, ResearchAnalyst researches the strongest retrieved trends, and Forge persists validated outputs.
 - Add one public signal source only after manual fixtures work.
 - Normalize records into `signals`.
 - Combine `user_preferences` and `preference_events` into a scoring context.
@@ -55,7 +55,8 @@ Good first source options:
 Exit criteria:
 
 - One command ranks fixture opportunities for a sample profile.
-- One command runs managed-agent research in dry-run mode and extracts structured signals/opportunities.
+- One command runs the managed trend-to-research pipeline and prints a `pipeline_run_id`, retrieved media count, research finding count, signal count, and opportunity count.
+- The saved run is inspectable in Supabase and shows retrieved media content plus corresponding research-derived signals.
 - Approvals and rejections create `preference_events`.
 - Ranking changes when preference events change.
 - A product review can be generated from stored opportunities and evaluations.

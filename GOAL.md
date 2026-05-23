@@ -4,6 +4,8 @@ Forge should help a human create and iterate on products in a product-first way.
 
 The practical v1 goal is a reproducible vertical slice that turns product context, configured inputs, user preferences, and a small auditable signal set into a product recommendation, reviewed prototype direction, and optionally a PR-ready MVP built by a managed sandbox agent.
 
+The next implementation goal is a managed trend-to-research ingestion run: one managed agent retrieves current media/social/repo trend content, a second managed agent researches the strongest trends using that retrieved content as grounding evidence, and Forge saves the resulting media evidence, research findings, normalized signals, and opportunities to Supabase.
+
 ## First Useful Outcome
 
 A local, scheduled, or manually triggered Forge run can:
@@ -32,6 +34,7 @@ A local, scheduled, or manually triggered Forge run can:
 - Preference profiles and preference events can be stored and used for opportunity ranking.
 - Project context, source configs, triggers, and opportunity evidence can be stored and audited.
 - Opportunities can be traced back to source records, research outputs, product context, or manual inputs.
+- A managed trend-to-research pipeline run can show retrieved media content and corresponding research output before or alongside normalized signals.
 - A human approves only the opportunity before a build starts.
 - The system can render a morning/product review with at least one decision recommendation.
 - Bull/Bear and Decision Agent output is stored as structured opportunity evaluation data.
