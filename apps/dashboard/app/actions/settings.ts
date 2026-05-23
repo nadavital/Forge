@@ -1,15 +1,17 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { updateProjectRepository, updateProjectSettings } from "@/lib/db/repository";
+import { updateProjectSettings } from "@/lib/db/repository";
 import { triggerProjectPipeline } from "@/lib/pipeline";
 
 type SaveProjectSettingsInput = {
   projectId: string;
+  repoUrl: string;
+  productUrl: string;
+  description: string;
   riskTolerance: string;
   markets: string;
   notes: string;
-  repoUrl?: string;
   sourceStatuses: Record<string, string>;
   triggerStatuses: Record<string, string>;
 };
@@ -17,6 +19,11 @@ type SaveProjectSettingsInput = {
 export async function saveProjectSettings(input: SaveProjectSettingsInput) {
   await updateProjectSettings({
     projectId: input.projectId,
+    project: {
+      repo_url: input.repoUrl,
+      product_url: input.productUrl,
+      description: input.description
+    },
     preferences: {
       preferred_markets: input.markets
         .split(",")
@@ -31,7 +38,6 @@ export async function saveProjectSettings(input: SaveProjectSettingsInput) {
 
   const repoUrl = input.repoUrl?.trim();
   if (repoUrl) {
-    await updateProjectRepository({ projectId: input.projectId, repoUrl });
     await triggerProjectPipeline(input.projectId);
   }
 

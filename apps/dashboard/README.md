@@ -54,13 +54,14 @@ Without env vars, the dashboard uses **`.forge-data/store.json`** (gitignored) s
 
 **Dashboard (this app) — done for Phase 4 demo**
 
-- Project onboarding, settings UI, morning review, opportunity detail
+- Project onboarding with GitHub repo connection, settings UI, morning review, opportunity detail
 - Review actions → `preference_events`
 - Build button → build brief → Gemini managed builder when `GEMINI_API_KEY` is set, otherwise simulated builder → `mvp_builds` + `build_artifacts`
 - Reflection proposal accept/reject
 - Connected product setup with a GitHub repo URL → README/issues ingestion → repo-specific opportunity ranking
 - New product runs seed buildable ideas from the preference/profile context when you do not know what to build yet
 - Run again re-ingests the connected repo when a repo URL is configured, or refreshes seeded ideas for new products
+- Archive project (hides it and disables triggers without deleting history)
 
 **Backend (your partner) — still to wire**
 

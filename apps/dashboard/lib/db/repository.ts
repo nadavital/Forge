@@ -1,6 +1,7 @@
 import { newId, readLocalStore, writeLocalStore } from "@/lib/db/local-db";
 import { createPrototypeOptionDraft } from "@/lib/prototypes/prototype-options";
 import { createSupabaseClient, isSupabaseConfigured } from "@/lib/db/supabase";
+import { buildProjectDefaults, githubSourcePatch, normalizeGithubRepository } from "@/lib/project-onboarding";
 import type {
   DbBuildArtifact,
   DbEvaluation,
@@ -83,53 +84,48 @@ export async function createProjectRecord(input: {
   name: string;
   mode: ProjectMode;
   repoUrl?: string | null;
+  productUrl?: string;
+  description?: string;
+  markets?: string[];
+  riskTolerance?: string;
+  notes?: string;
 }): Promise<DbProject> {
   const now = new Date().toISOString();
-  const project: DbProject = {
-    id: newId("proj"),
-    name: input.name.trim(),
+  const defaults = buildProjectDefaults({
+    projectId: newId("proj"),
     mode: input.mode,
-    stage: "idea",
-    repo_url: cleanOptional(input.repoUrl),
-    created_at: now,
-    updated_at: now
-  };
+    name: input.name,
+    repoUrl: input.repoUrl,
+    productUrl: input.productUrl,
+    description: input.description,
+    markets: input.markets,
+    riskTolerance: input.riskTolerance,
+    notes: input.notes,
+    now,
+    idFactory: newId
+  });
 
   if (isSupabaseConfigured()) {
     const supabase = createSupabaseClient()!;
-    return supabase.insert("projects", project);
+    const project = await supabase.insert("projects", defaults.project);
+    for (const source of defaults.sources) {
+      await supabase.insert("source_configs", { ...source, project_id: project.id });
+    }
+    for (const trigger of defaults.triggers) {
+      await supabase.insert("triggers", { ...trigger, project_id: project.id });
+    }
+    await supabase.insert("user_preferences", { ...defaults.preference, project_id: project.id });
+    return project;
   }
 
   await mutateStore((store) => {
-    store.projects.unshift(project);
-    store.source_configs.push({
-      id: newId("src"),
-      project_id: project.id,
-      source_type: input.mode === "connected_product" ? "github" : "manual",
-      name: input.mode === "connected_product" ? "GitHub issues" : "Manual ideas",
-      status: "active",
-      config: input.repoUrl ? { repo_url: cleanOptional(input.repoUrl) } : {}
-    });
-    store.triggers.push({
-      id: newId("trg"),
-      project_id: project.id,
-      name: "Manual",
-      trigger_type: "manual",
-      status: "active"
-    });
-    store.user_preferences.push({
-      id: newId("pref"),
-      project_id: project.id,
-      preferred_markets: input.mode === "connected_product" ? ["Your product"] : ["New market"],
-      risk_tolerance: input.mode === "connected_product" ? "medium" : "low",
-      notes:
-        input.mode === "connected_product"
-          ? "Connect feedback and repo signals before the first scheduled run."
-          : "Individual builder profile. Prefer local-first demos, AI/devtool workflows, technical creativity, and MVPs that do not require paid APIs."
-    });
+    store.projects.unshift(defaults.project);
+    store.source_configs.push(...defaults.sources);
+    store.triggers.push(...defaults.triggers);
+    store.user_preferences.push(defaults.preference);
   });
 
-  return project;
+  return defaults.project;
 }
 
 export async function updateProjectRepository(input: {
@@ -138,8 +134,10 @@ export async function updateProjectRepository(input: {
   productContext?: string;
 }): Promise<void> {
   const now = new Date().toISOString();
+  const githubPatch = githubSourcePatch(input.repoUrl);
+  const normalizedRepoUrl = normalizeGithubRepository(input.repoUrl)?.repoUrl ?? input.repoUrl;
   const patch = {
-    repo_url: input.repoUrl,
+    repo_url: normalizedRepoUrl,
     description: input.productContext,
     updated_at: now
   };
@@ -147,13 +145,30 @@ export async function updateProjectRepository(input: {
   if (isSupabaseConfigured()) {
     const supabase = createSupabaseClient()!;
     await supabase.update("projects", input.projectId, patch);
+    if (githubPatch) {
+      const githubSources = await supabase.select<DbSourceConfig>(
+        "source_configs",
+        `select=*&project_id=eq.${encodeURIComponent(input.projectId)}&source_type=eq.github&limit=1`
+      );
+      const source = githubSources[0];
+      if (source) {
+        await supabase.update("source_configs", source.id, githubPatch);
+      } else {
+        await supabase.insert("source_configs", {
+          id: newId("src"),
+          project_id: input.projectId,
+          source_type: "github",
+          ...githubPatch
+        });
+      }
+    }
     return;
   }
 
   await mutateStore((store) => {
     const project = store.projects.find((row) => row.id === input.projectId);
     if (project) {
-      project.repo_url = input.repoUrl;
+      project.repo_url = normalizedRepoUrl;
       project.description = input.productContext ?? project.description;
       project.updated_at = now;
     }
@@ -162,15 +177,18 @@ export async function updateProjectRepository(input: {
     );
     if (source) {
       source.status = "active";
-      source.config = { ...(source.config ?? {}), repo_url: input.repoUrl };
+      source.config = { ...(source.config ?? {}), repo_url: normalizedRepoUrl };
+      if (githubPatch) {
+        Object.assign(source, githubPatch);
+      }
     } else {
       store.source_configs.push({
         id: newId("src"),
         project_id: input.projectId,
         source_type: "github",
-        name: "GitHub issues",
+        name: githubPatch?.name ?? "GitHub issues",
         status: "active",
-        config: { repo_url: input.repoUrl }
+        config: githubPatch?.config ?? { repo_url: normalizedRepoUrl }
       });
     }
   });
@@ -506,12 +524,23 @@ export async function completePipelineRun(runId: string, metadata: JsonObject): 
 
 export async function updateProjectSettings(input: {
   projectId: string;
+  project: Pick<DbProject, "repo_url" | "product_url" | "description">;
   preferences: Pick<DbUserPreference, "preferred_markets" | "risk_tolerance" | "notes">;
   sources: Array<Pick<DbSourceConfig, "id" | "status">>;
   triggers: Array<Pick<DbTrigger, "id" | "status">>;
 }): Promise<void> {
+  const githubPatch = githubSourcePatch(input.project.repo_url);
+  const normalizedRepo = normalizeGithubRepository(input.project.repo_url);
+  const now = new Date().toISOString();
+
   if (isSupabaseConfigured()) {
     const supabase = createSupabaseClient()!;
+    await supabase.update("projects", input.projectId, {
+      repo_url: normalizedRepo?.repoUrl ?? null,
+      product_url: input.project.product_url,
+      description: input.project.description,
+      updated_at: now
+    });
     const pref = (
       await supabase.select<DbUserPreference>(
         "user_preferences",
@@ -527,6 +556,23 @@ export async function updateProjectSettings(input: {
     for (const source of input.sources) {
       await supabase.update("source_configs", source.id, { status: source.status });
     }
+    if (githubPatch) {
+      const githubSources = await supabase.select<DbSourceConfig>(
+        "source_configs",
+        `select=*&project_id=eq.${encodeURIComponent(input.projectId)}&source_type=eq.github&limit=1`
+      );
+      const source = githubSources[0];
+      if (source) {
+        await supabase.update("source_configs", source.id, githubPatch);
+      } else {
+        await supabase.insert("source_configs", {
+          id: newId("src"),
+          project_id: input.projectId,
+          source_type: "github",
+          ...githubPatch
+        });
+      }
+    }
     for (const trigger of input.triggers) {
       await supabase.update("triggers", trigger.id, { status: trigger.status });
     }
@@ -534,6 +580,14 @@ export async function updateProjectSettings(input: {
   }
 
   await mutateStore((store) => {
+    const project = store.projects.find((row) => row.id === input.projectId);
+    if (project) {
+      project.repo_url = normalizedRepo?.repoUrl ?? null;
+      project.product_url = input.project.product_url;
+      project.description = input.project.description;
+      project.updated_at = now;
+    }
+
     const pref = store.user_preferences.find((row) => row.project_id === input.projectId);
     if (pref) {
       pref.preferred_markets = input.preferences.preferred_markets;
@@ -543,6 +597,21 @@ export async function updateProjectSettings(input: {
     for (const source of input.sources) {
       const row = store.source_configs.find((entry) => entry.id === source.id);
       if (row) row.status = source.status;
+    }
+    if (githubPatch) {
+      const githubSource = store.source_configs.find(
+        (source) => source.project_id === input.projectId && source.source_type === "github"
+      );
+      if (githubSource) {
+        Object.assign(githubSource, githubPatch);
+      } else {
+        store.source_configs.push({
+          id: newId("src"),
+          project_id: input.projectId,
+          source_type: "github",
+          ...githubPatch
+        });
+      }
     }
     for (const trigger of input.triggers) {
       const row = store.triggers.find((entry) => entry.id === trigger.id);
@@ -565,6 +634,40 @@ export async function markTriggerRan(triggerId: string): Promise<void> {
     if (trigger) {
       trigger.last_run_at = patch.last_run_at;
     }
+  });
+}
+
+export async function archiveProjectRecord(projectId: string): Promise<void> {
+  const now = new Date().toISOString();
+
+  if (isSupabaseConfigured()) {
+    const supabase = createSupabaseClient()!;
+    await supabase.update("projects", projectId, {
+      archived_at: now,
+      stage: "archived",
+      updated_at: now
+    });
+    return;
+  }
+
+  await mutateStore((store) => {
+    const project = store.projects.find((row) => row.id === projectId);
+    if (!project) {
+      return;
+    }
+    project.archived_at = now;
+    project.stage = "archived";
+    project.updated_at = now;
+    for (const trigger of store.triggers.filter((row) => row.project_id === projectId)) {
+      trigger.status = "disabled";
+    }
+    store.preference_events.unshift({
+      id: newId("evt"),
+      project_id: projectId,
+      event_type: "project_archived",
+      payload: { archived_at: now },
+      created_at: now
+    });
   });
 }
 

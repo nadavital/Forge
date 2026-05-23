@@ -1,5 +1,6 @@
 import { loadForgeProject, loadForgeProjects } from "@/lib/forge-data";
 import { getProjectBundle } from "@/lib/db/repository";
+import { buildOnboardingChecklist, onboardingStatus } from "@/lib/project-onboarding";
 import type { MorningReviewProject, ProjectSettingsView } from "@/types/forge";
 
 export async function loadDashboardProjects() {
@@ -24,9 +25,23 @@ export async function loadProjectSettings(projectId: string): Promise<ProjectSet
   if (!bundle.project) {
     return null;
   }
+  const checklist = buildOnboardingChecklist({
+    project: bundle.project,
+    sources: bundle.sources,
+    triggers: bundle.triggers,
+    preference: bundle.preferences
+  });
 
   return {
-    repoUrl: bundle.project.repo_url,
+    project: {
+      repoUrl: bundle.project.repo_url || "",
+      productUrl: bundle.project.product_url || "",
+      description: bundle.project.description || ""
+    },
+    onboarding: {
+      status: onboardingStatus(checklist),
+      checklist
+    },
     sources: bundle.sources.map((source) => ({
       id: source.id,
       name: source.name,

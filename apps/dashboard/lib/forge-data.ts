@@ -26,12 +26,14 @@ import type {
 
 export async function loadForgeProjects(): Promise<MorningReviewProject[]> {
   const store = await loadStore();
-  return Promise.all(store.projects.map((project) => mapProject(project, store)));
+  return Promise.all(
+    store.projects.filter((project) => !project.archived_at).map((project) => mapProject(project, store))
+  );
 }
 
 export async function loadForgeProject(projectId: string): Promise<MorningReviewProject | null> {
   const store = await loadStore();
-  const project = store.projects.find((row) => row.id === projectId);
+  const project = store.projects.find((row) => row.id === projectId && !row.archived_at);
   if (!project) {
     return null;
   }
