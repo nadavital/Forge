@@ -68,3 +68,4 @@ flowchart LR
 - [Prompt Contracts](./docs/prompts/AGENT_PROMPTS.md)
 - [Open Questions](./docs/OPEN_QUESTIONS.md)
 - [Ingestion Agent](./services/ingestion_agent/README.md)
+- [Managed Research](./services/managed_research/README.md)
