@@ -18,6 +18,7 @@ from test_api_contract import (  # noqa: E402
     test_simulated_builder_report_uses_target_repo,
     test_status_constants_match_frontend_contract,
 )
+from test_collectors import test_collect_reddit_parses_public_search_json  # noqa: E402
 from test_local_synthesis import test_local_synthesis_creates_topics_signals_and_opportunities  # noqa: E402
 from test_opportunity_clustering import (  # noqa: E402
     test_bull_bear_fixture_parses_synthesis,
@@ -38,6 +39,7 @@ def main() -> None:
     test_build_prompt_context_prioritizes_user_notes()
     test_builder_report_parses_fenced_json()
     test_simulated_builder_report_uses_target_repo()
+    test_collect_reddit_parses_public_search_json()
     test_local_synthesis_creates_topics_signals_and_opportunities()
     test_cluster_opportunities_groups_duplicate_cost_ideas()
     test_bull_bear_fixture_parses_synthesis()

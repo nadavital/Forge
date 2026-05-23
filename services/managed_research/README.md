@@ -16,6 +16,7 @@ GEMINI_API_KEY=
 SUPABASE_URL=https://dumomlcpcehrqssrexjl.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=
 GITHUB_TOKEN=
+FORGE_REDDIT_SUBREDDITS=LocalLLaMA,codex,ClaudeAI,OpenAI
 ```
 
 `SUPABASE_SERVICE_ROLE_KEY` must stay server-side and must not be committed.
@@ -48,6 +49,7 @@ Cheap deterministic public collection:
 python -m forge_managed_research.ingest \
   --pipeline source-collect \
   --topic "AI agents developer tools production pain" \
+  --subreddits "LocalLLaMA,codex,ClaudeAI,OpenAI" \
   --limit-per-source 20 \
   --max-topics 5 \
   --max-opportunities 5 \
@@ -106,9 +108,11 @@ For volume, run deterministic public collection first. It uses cheap public APIs
 python -m forge_managed_research.ingest \
   --pipeline source-collect \
   --topic "AI agents developer tools production pain" \
+  --subreddits "LocalLLaMA,codex,ClaudeAI,OpenAI" \
   --limit-per-source 25 \
   --max-topics 8 \
   --max-opportunities 8 \
+  --trigger schedule \
   --save
 ```
 
