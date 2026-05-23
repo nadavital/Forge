@@ -79,9 +79,11 @@ FORGE_BUILDER_ADAPTER=managed
 GEMINI_API_KEY=...
 FORGE_GEMINI_BUILDER_AGENT=antigravity-preview-05-2026
 FORGE_TEMPLATE_REPO_URL=https://github.com/forge-labs/mvp-template
+FORGE_GENERATED_REPO_OWNER=rkibel
+GITHUB_TOKEN=...
 ```
 
-Managed builds require the selected project to have `repo_url`; the managed agent is instructed to build in that target repo, open a PR titled `Build MVP: <opportunity title>`, and return PR metadata plus review artifacts.
+Existing-product builds use the connected project `repo_url` and open a PR titled `Build MVP: <opportunity title>`. New-product builds target a generated repo named from the project and opportunity. The managed agent can either return PR metadata directly or return a `files[]` bundle; when it returns files, Forge uses the server-side GitHub token to create the generated repo or branch and open the PR without exposing GitHub credentials to the sandbox.
 
 ## GitHub repo demo
 

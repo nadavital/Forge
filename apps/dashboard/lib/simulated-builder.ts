@@ -18,14 +18,19 @@ export async function runSimulatedBuilder(input: {
   const opportunity = await getOpportunityRecord(input.opportunityId);
   const title = opportunity?.title ?? "Untitled opportunity";
   const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-  const targetRepo = targetRepoFromBrief(input.build.build_brief) || `${SIMULATED_REPO}-${slug}`;
+  const target = targetFromBrief(input.build.build_brief);
+  const targetRepo = target.repoUrl || `${SIMULATED_REPO}-${slug}`;
+  const branch = target.branch || `forge/${slug}`;
 
   await updateMvpBuild(input.build.id, { status: "building" });
   await updateMvpBuild(input.build.id, {
     status: "reviewing",
     generated_repo_url: targetRepo,
-    branch: `forge/${slug}`,
-    logs: "Simulated builder: scaffolded repo, generated README, ran smoke checks."
+    branch,
+    logs:
+      target.kind === "generated_repo_with_pr"
+        ? "Simulated Antigravity builder: scaffolded a generated repo, opened an MVP PR, and ran smoke checks."
+        : "Simulated Antigravity builder: created a feature branch in the connected repo, opened a PR, and ran smoke checks."
   });
 
   await updateMvpBuild(input.build.id, {
@@ -66,12 +71,26 @@ export async function runSimulatedBuilder(input: {
   await updateOpportunityStatus(input.opportunityId, "built");
 }
 
-function targetRepoFromBrief(brief: unknown): string {
-  if (!brief || typeof brief !== "object") return "";
+function targetFromBrief(brief: unknown): { kind: string; repoUrl: string; branch: string } {
+  if (!brief || typeof brief !== "object") return { kind: "", repoUrl: "", branch: "" };
+  const target = (brief as { build_target?: unknown }).build_target;
+  if (target && typeof target === "object") {
+    return {
+      kind: typeof (target as { kind?: unknown }).kind === "string" ? ((target as { kind: string }).kind) : "",
+      repoUrl:
+        typeof (target as { target_repo_url?: unknown }).target_repo_url === "string"
+          ? ((target as { target_repo_url: string }).target_repo_url)
+          : "",
+      branch:
+        typeof (target as { branch_name?: unknown }).branch_name === "string"
+          ? ((target as { branch_name: string }).branch_name)
+          : ""
+    };
+  }
   const project = (brief as { project?: unknown }).project;
-  if (!project || typeof project !== "object") return "";
+  if (!project || typeof project !== "object") return { kind: "", repoUrl: "", branch: "" };
   const repoUrl = (project as { repo_url?: unknown }).repo_url;
-  return typeof repoUrl === "string" ? repoUrl : "";
+  return { kind: repoUrl ? "existing_repo_pr" : "", repoUrl: typeof repoUrl === "string" ? repoUrl : "", branch: "" };
 }
 
 export async function queueSimulatedBuild(input: {
