@@ -8,6 +8,8 @@ Claude should be especially strict about:
 
 - Not inventing Antigravity, Vertex, or template-repo implementation details.
 - Not turning product aspirations into claims that the repo already works.
-- Keeping preferences, opportunities, build briefs, build logs, and generated artifacts distinct.
-- Preserving the approval contract: human approves an opportunity; the managed builder handles implementation within v1 limits.
-- Keeping the docs oriented around MVP builds and generated PRs.
+- Keeping project context, preferences, source evidence, opportunities, evaluations, decisions, prototypes, build briefs, build logs, generated artifacts, and reflection proposals distinct.
+- Preserving the approval contract: human approves a direction or opportunity; the managed builder handles implementation within v1 limits.
+- Keeping the docs oriented around product-first continuous use, not just MVP builds and generated PRs.
+- Not treating Forge reflection/dreaming as product research. Reflection improves Forge behavior; it does not create product opportunities by itself.
+- Not allowing generated prototypes or MVPs to be described as proof of market demand.
