@@ -1,0 +1,14 @@
+{
+  "name": "forge",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter @forge/dashboard dev",
+    "dev:turbo": "pnpm --filter @forge/dashboard dev:turbo",
+    "start": "pnpm --filter @forge/dashboard start",
+    "build": "pnpm --filter @forge/dashboard build",
+    "lint": "pnpm --filter @forge/dashboard lint",
+    "typecheck": "pnpm --filter @forge/dashboard typecheck",
+    "setup": "bash apps/dashboard/scripts/setup-local.sh"
+  },
+  "packageManager": "pnpm@9.15.4"
+}

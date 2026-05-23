@@ -1,0 +1,332 @@
+{
+  "projects": [
+    {
+      "id": "acme",
+      "name": "Acme Console",
+      "mode": "connected_product",
+      "stage": "launched",
+      "description": "Developer console for API products",
+      "created_at": "2026-05-20T06:00:00.000Z",
+      "updated_at": "2026-05-23T06:18:00.000Z"
+    },
+    {
+      "id": "petal",
+      "name": "Petal News",
+      "mode": "new_product",
+      "stage": "prototype",
+      "description": "Personal daily newspaper product",
+      "created_at": "2026-05-18T08:00:00.000Z",
+      "updated_at": "2026-05-22T12:00:00.000Z"
+    }
+  ],
+  "source_configs": [
+    {
+      "id": "acme-src-1",
+      "project_id": "acme",
+      "source_type": "feedback_form",
+      "name": "Support notes",
+      "status": "active"
+    },
+    {
+      "id": "acme-src-2",
+      "project_id": "acme",
+      "source_type": "github",
+      "name": "GitHub issues",
+      "status": "active"
+    },
+    {
+      "id": "acme-src-3",
+      "project_id": "acme",
+      "source_type": "web_search",
+      "name": "Web research",
+      "status": "paused"
+    },
+    {
+      "id": "petal-src-1",
+      "project_id": "petal",
+      "source_type": "manual",
+      "name": "Manual ideas",
+      "status": "active"
+    },
+    {
+      "id": "petal-src-2",
+      "project_id": "petal",
+      "source_type": "feedback_form",
+      "name": "Onboarding signals",
+      "status": "active"
+    }
+  ],
+  "triggers": [
+    {
+      "id": "acme-trg-1",
+      "project_id": "acme",
+      "name": "Weekday morning",
+      "trigger_type": "schedule",
+      "status": "active",
+      "last_run_at": "2026-05-23T06:00:00.000Z"
+    },
+    {
+      "id": "petal-trg-1",
+      "project_id": "petal",
+      "name": "Manual only",
+      "trigger_type": "manual",
+      "status": "active"
+    }
+  ],
+  "user_preferences": [
+    {
+      "id": "acme-pref-1",
+      "project_id": "acme",
+      "preferred_markets": ["Developer tools", "API products"],
+      "risk_tolerance": "medium",
+      "notes": "Prefer narrow MVPs that can ship without paid APIs."
+    },
+    {
+      "id": "petal-pref-1",
+      "project_id": "petal",
+      "preferred_markets": ["Consumer", "Daily use"],
+      "risk_tolerance": "low",
+      "notes": "Keep agent machinery hidden from the reader experience."
+    }
+  ],
+  "preference_events": [],
+  "pipeline_runs": [
+    {
+      "id": "acme-run-1",
+      "project_id": "acme",
+      "run_type": "review",
+      "status": "completed",
+      "trigger": "schedule",
+      "started_at": "2026-05-23T06:00:00.000Z",
+      "completed_at": "2026-05-23T06:18:00.000Z",
+      "metadata": {
+        "digest_summary": "Setup friction rose after the docs refresh. API key recovery is the clearest win.",
+        "changes": [
+          "3 new support notes mention 401 errors during setup",
+          "GitHub issue #142 reopened asking for a demo key path",
+          "Review fatigue dropped one rank after shorter summaries shipped internally"
+        ]
+      }
+    },
+    {
+      "id": "petal-run-1",
+      "project_id": "petal",
+      "run_type": "review",
+      "status": "completed",
+      "trigger": "manual",
+      "started_at": "2026-05-22T11:30:00.000Z",
+      "completed_at": "2026-05-22T12:00:00.000Z",
+      "metadata": {
+        "digest_summary": "Ask-the-issue still leads. Reader control matters more than exposing research machinery.",
+        "changes": ["Manual idea added for personal newspaper steering", "News surface remains strongest daily habit"]
+      }
+    }
+  ],
+  "signals": [
+    {
+      "id": "sig-1",
+      "project_id": "acme",
+      "source": "feedback",
+      "title": "6 setup notes cite scopes or 401s"
+    },
+    {
+      "id": "sig-2",
+      "project_id": "acme",
+      "source": "github",
+      "title": "2 issues request a test-key path"
+    },
+    {
+      "id": "sig-3",
+      "project_id": "acme",
+      "source": "behavior",
+      "title": "43% drop before first call"
+    },
+    {
+      "id": "sig-4",
+      "project_id": "acme",
+      "source": "feedback",
+      "title": "4 mentions of long summaries"
+    },
+    {
+      "id": "sig-5",
+      "project_id": "petal",
+      "source": "manual",
+      "title": "User asked for personal newspaper feel"
+    },
+    {
+      "id": "sig-6",
+      "project_id": "petal",
+      "source": "behavior",
+      "title": "News is strongest daily surface"
+    }
+  ],
+  "opportunities": [
+    {
+      "id": "api-key-recovery",
+      "project_id": "acme",
+      "pipeline_run_id": "acme-run-1",
+      "title": "API key recovery",
+      "problem": "Developers abandon setup after their first 401.",
+      "target_user": "New developer accounts",
+      "mvp_concept": "Recovery-first setup with scope detection and a demo key.",
+      "score": 91,
+      "score_rationale": "Narrow, high-intent, testable without paid APIs.",
+      "status": "proposed"
+    },
+    {
+      "id": "review-fatigue",
+      "project_id": "acme",
+      "pipeline_run_id": "acme-run-1",
+      "title": "Review fatigue",
+      "problem": "Teams stop opening research dumps after week one.",
+      "target_user": "Founders reviewing daily opportunities",
+      "mvp_concept": "Short decision queue with one recommendation per day.",
+      "score": 78,
+      "score_rationale": "Real product risk, but evidence is thinner than API recovery.",
+      "status": "watching"
+    },
+    {
+      "id": "ask-the-issue",
+      "project_id": "petal",
+      "pipeline_run_id": "petal-run-1",
+      "title": "Ask the issue",
+      "problem": "Readers want to steer the daily issue without seeing agent mechanics.",
+      "target_user": "Single-user dogfood readers",
+      "mvp_concept": "Quiet ask box → source-backed story in next issue.",
+      "score": 84,
+      "score_rationale": "Tests the core loop without exposing research machinery.",
+      "status": "proposed"
+    }
+  ],
+  "opportunity_signals": [
+    { "opportunity_id": "api-key-recovery", "signal_id": "sig-1" },
+    { "opportunity_id": "api-key-recovery", "signal_id": "sig-2" },
+    { "opportunity_id": "api-key-recovery", "signal_id": "sig-3" },
+    { "opportunity_id": "review-fatigue", "signal_id": "sig-4" },
+    { "opportunity_id": "ask-the-issue", "signal_id": "sig-5" },
+    { "opportunity_id": "ask-the-issue", "signal_id": "sig-6" }
+  ],
+  "opportunity_evaluations": [
+    {
+      "id": "eval-taste-1",
+      "opportunity_id": "api-key-recovery",
+      "evaluator": "taste_critic",
+      "content": "High usefulness and coherence. Differentiated from generic docs fixes because it meets developers at the moment of failure.",
+      "scores": { "usefulness": 0.9, "coherence": 0.88, "differentiation": 0.82 }
+    },
+    {
+      "id": "eval-bull-1",
+      "opportunity_id": "api-key-recovery",
+      "evaluator": "bull",
+      "content": "Direct revenue impact — 43% drop before first successful call."
+    },
+    {
+      "id": "eval-bear-1",
+      "opportunity_id": "api-key-recovery",
+      "evaluator": "bear",
+      "content": "Might be a docs problem; need to confirm with one more cohort."
+    },
+    {
+      "id": "eval-decision-1",
+      "opportunity_id": "api-key-recovery",
+      "evaluator": "decision_agent",
+      "content": "Narrow, high-intent, testable without paid APIs.",
+      "scores": { "recommendation": "prototype", "confidence": 0.84 }
+    },
+    {
+      "id": "eval-taste-2",
+      "opportunity_id": "review-fatigue",
+      "evaluator": "taste_critic",
+      "content": "Strong product-quality concern for Forge itself. Worth watching until more teams hit week two.",
+      "scores": { "usefulness": 0.72, "coherence": 0.8, "differentiation": 0.65 }
+    },
+    {
+      "id": "eval-bull-2",
+      "opportunity_id": "review-fatigue",
+      "evaluator": "bull",
+      "content": "Competitors are moving to inbox-style decisions."
+    },
+    {
+      "id": "eval-bear-2",
+      "opportunity_id": "review-fatigue",
+      "evaluator": "bear",
+      "content": "Only 4 feedback mentions — could be a power-user complaint."
+    },
+    {
+      "id": "eval-decision-2",
+      "opportunity_id": "review-fatigue",
+      "evaluator": "decision_agent",
+      "content": "Real product risk, but evidence is thinner than API recovery.",
+      "scores": { "recommendation": "watch", "confidence": 0.62 }
+    },
+    {
+      "id": "eval-taste-3",
+      "opportunity_id": "ask-the-issue",
+      "evaluator": "taste_critic",
+      "content": "Feels intuitive and on-brand for a personal newspaper. Low machinery exposure is the right constraint.",
+      "scores": { "usefulness": 0.86, "coherence": 0.9, "differentiation": 0.78 }
+    },
+    {
+      "id": "eval-bull-3",
+      "opportunity_id": "ask-the-issue",
+      "evaluator": "bull",
+      "content": "News is the strongest daily-use surface; low build cost."
+    },
+    {
+      "id": "eval-bear-3",
+      "opportunity_id": "ask-the-issue",
+      "evaluator": "bear",
+      "content": "Single-user signal — may not generalize beyond dogfood."
+    },
+    {
+      "id": "eval-decision-3",
+      "opportunity_id": "ask-the-issue",
+      "evaluator": "decision_agent",
+      "content": "Tests the core loop without exposing research machinery.",
+      "scores": { "recommendation": "prototype", "confidence": 0.76 }
+    }
+  ],
+  "prototype_options": [
+    {
+      "id": "recovery-setup",
+      "project_id": "acme",
+      "opportunity_id": "api-key-recovery",
+      "title": "Recovery setup flow",
+      "status": "generated",
+      "artifact_url": null
+    }
+  ],
+  "mvp_builds": [],
+  "build_artifacts": [],
+  "reflection_runs": [
+    {
+      "id": "refl-run-1",
+      "project_id": "acme",
+      "status": "completed",
+      "summary": "Users pass on opportunities when summaries feel like research dumps instead of decisions.",
+      "evidence": { "ignored_count": 2, "feedback_count": 4 },
+      "created_at": "2026-05-21T09:00:00.000Z",
+      "completed_at": "2026-05-21T09:15:00.000Z"
+    }
+  ],
+  "reflection_proposals": [
+    {
+      "id": "refl-prop-1",
+      "reflection_run_id": "refl-run-1",
+      "proposal_type": "rubric",
+      "risk_level": "review_required",
+      "title": "Penalize opportunities with more than 5 evidence chips in morning review",
+      "rationale": "Repeated passes correlate with summary overload. Shorter decision cards ranked higher in dogfood.",
+      "status": "proposed"
+    },
+    {
+      "id": "refl-prop-2",
+      "reflection_run_id": "refl-run-1",
+      "proposal_type": "preference",
+      "risk_level": "low",
+      "title": "Boost narrow setup-recovery MVPs for developer tools",
+      "rationale": "Approved builds in this category completed faster and needed fewer revisions.",
+      "status": "proposed"
+    }
+  ]
+}
