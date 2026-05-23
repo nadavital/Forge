@@ -65,6 +65,7 @@ flowchart LR
 - [Execution Plan](./PLAN.md)
 - [Architecture](./docs/ARCHITECTURE.md)
 - [Data Model](./docs/DATA_MODEL.md)
+- [Managed Trend Research Goal](./docs/MANAGED_TREND_RESEARCH_GOAL.md)
 - [Prompt Contracts](./docs/prompts/AGENT_PROMPTS.md)
 - [Open Questions](./docs/OPEN_QUESTIONS.md)
 - [Managed Research](./services/managed_research/README.md)
