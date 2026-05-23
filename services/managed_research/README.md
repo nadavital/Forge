@@ -83,6 +83,14 @@ Supabase migration has already been applied for the first persistence slice:
 - `opportunity_signals`
 - `opportunity_evaluations`
 
+For the dashboard API contract, also apply:
+
+```text
+supabase/migrations/0002_dashboard_contract.sql
+```
+
+It adds project, schedule, run, action, and build tables, plus nullable `project_id` links on existing ingestion records.
+
 ```bash
 python -m forge_managed_research.ingest \
   --topic "developer pain with AI agent deployment" \
@@ -177,6 +185,47 @@ python -m forge_managed_research.evaluate \
   --dry-run
 ```
 
+## Dashboard API
+
+Run the backend API locally:
+
+```bash
+uvicorn forge_managed_research.api:app --reload --port 8000
+```
+
+Health check:
+
+```bash
+curl http://localhost:8000/health
+```
+
+The API implements the project-scoped dashboard contract in `docs/FRONTEND_BACKEND_CONTRACT.md`:
+
+- `POST /api/projects`
+- `GET /api/projects`
+- `GET /api/projects/{project_id}`
+- `PATCH /api/projects/{project_id}`
+- `POST /api/projects/{project_id}/brainstorm`
+- `POST /api/projects/{project_id}/import-github`
+- `POST /api/projects/{project_id}/runs`
+- `GET /api/projects/{project_id}/runs`
+- `GET /api/runs/{run_id}`
+- `GET /api/projects/{project_id}/opportunities`
+- `GET /api/opportunities/{opportunity_id}`
+- `POST /api/opportunities/{opportunity_id}/actions`
+- `POST /api/opportunities/{opportunity_id}/builds`
+- `GET /api/builds/{build_id}`
+
+Long-running project analysis, discovery, and build work is launched as FastAPI background tasks. The frontend should render the returned `in_progress` records and refresh via polling or Supabase Realtime.
+
+Discovery runs use deterministic public collection first, then opportunity clustering. By default, the backend attempts a managed Bull/Bear/Decision/Synthesizer pass on the top cluster. Set this to skip managed evaluation during quota-sensitive development:
+
+```bash
+FORGE_ENABLE_MANAGED_EVAL=0
+```
+
+Build records currently prepare and persist the Antigravity builder prompt context required by the contract. The final adapter that asks Antigravity to create a branch/PR in the project repo is still the next backend step.
+
 ## Honest Limits
 
 - Deep Research is best for cited reports, not guaranteed clean database rows.
@@ -184,3 +233,5 @@ python -m forge_managed_research.evaluate \
 - Antigravity currently does not guarantee structured output, so Forge validates extracted JSON before saving.
 - Source/API limits still apply. Use `GITHUB_TOKEN` for GitHub. Add source-specific auth when a public source becomes limiting.
 - Bull/Bear/Synthesizer uses managed agents where available, but the deterministic clustering step should run first to avoid wasting quota on duplicate opportunities.
+- The dashboard API needs `0002_dashboard_contract.sql` applied before project routes can persist data.
+- The Antigravity build endpoint creates a verifiable build record and prompt context; real PR creation still needs the managed-builder adapter.

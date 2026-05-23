@@ -4,7 +4,9 @@ version = "0.1.0"
 description = "Gemini managed-agent orchestrator for Forge research and ingestion."
 requires-python = ">=3.10"
 dependencies = [
+    "fastapi>=0.115.0",
     "google-genai>=1.55.0",
+    "uvicorn>=0.34.0",
 ]
 
 [project.optional-dependencies]

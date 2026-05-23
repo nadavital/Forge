@@ -11,6 +11,11 @@ from test_extract import (  # noqa: E402
     test_extract_json_payload_from_fenced_block,
     test_extract_json_payload_returns_empty_contract_when_missing,
 )
+from test_api_contract import (  # noqa: E402
+    test_build_prompt_context_prioritizes_user_notes,
+    test_run_response_uses_contract_shape,
+    test_status_constants_match_frontend_contract,
+)
 from test_local_synthesis import test_local_synthesis_creates_topics_signals_and_opportunities  # noqa: E402
 from test_opportunity_clustering import (  # noqa: E402
     test_bull_bear_fixture_parses_synthesis,
@@ -26,6 +31,9 @@ from forge_managed_research.env import load_env_file  # noqa: E402
 def main() -> None:
     test_extract_json_payload_from_fenced_block()
     test_extract_json_payload_returns_empty_contract_when_missing()
+    test_status_constants_match_frontend_contract()
+    test_run_response_uses_contract_shape()
+    test_build_prompt_context_prioritizes_user_notes()
     test_local_synthesis_creates_topics_signals_and_opportunities()
     test_cluster_opportunities_groups_duplicate_cost_ideas()
     test_bull_bear_fixture_parses_synthesis()
