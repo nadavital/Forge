@@ -1,39 +1,42 @@
 # Goal
 
-Forge should help a human evaluate startup ideas from public developer pain signals.
+Forge should help a human find product opportunities that match their preferences and turn approved opportunities into runnable MVPs.
 
-The practical goal is not "fully autonomous" at first. The practical goal is a reproducible vertical slice that turns a small, auditable set of source items into one sourced thesis draft.
+The practical v1 goal is a reproducible vertical slice that turns a small, auditable set of source items and user preferences into a PR-ready MVP built by a managed sandbox agent.
 
 ## First Useful Outcome
 
-A local or cloud-triggered run can:
+A local or cloud-triggered Forge run can:
 
-1. Fetch public source items from one or two reliable sources.
-2. Normalize them into a database.
-3. Select one opportunity candidate.
-4. Generate a bounded critique from pro and con perspectives.
-5. Produce a thesis draft with structured source references.
-6. Display the result in a simple dashboard.
+1. Load an explicit user preference profile.
+2. Ingest manual ideas or public source signals.
+3. Rank product opportunities against the profile and behavior history.
+4. Ask the human to approve one opportunity.
+5. Generate an internal build brief from the approved opportunity.
+6. Start a managed builder run against a generated repo created from a template.
+7. Record the generated PR URL, README summary, checks, and run instructions.
 
 ## Users
 
-- Founders looking for technical problem spaces to validate.
-- Startup studios evaluating opportunity areas.
-- Developer tool investors tracking emerging pain.
-- Analysts producing startup research.
+- Founders who want working MVPs for promising ideas.
+- Startup studios evaluating multiple product directions quickly.
+- Developer tool investors or operators tracking emerging pain.
+- Builders who want an agent to convert opportunity taste into shipped prototypes.
 
 ## Success Criteria
 
-- The pipeline can be run repeatedly against fixtures and produce schema-valid output.
-- Source references are stored separately from generated prose.
-- A thesis can be traced back to the source records that influenced it.
-- Debate messages are persisted in order and can be rendered by the dashboard.
-- Cloud deployment is attempted only after the local system works.
+- Preference profiles and preference events can be stored and used for opportunity ranking.
+- Opportunities can be traced back to source records or manual inputs.
+- A human approves only the opportunity before a build starts.
+- Build state is persisted from approval through generated PR review.
+- Generated PRs include runnable code, README instructions, and tests or smoke checks.
+- Cloud or managed-sandbox integration is attempted only after local contracts and simulated build flows work.
 
 ## Non-Goals
 
 - Full user billing, teams, or workspace management.
 - Perfect source coverage across the entire internet.
-- Human analyst editing workflows.
+- Production deployments from generated MVPs.
+- Paid API usage by the managed builder.
 - Fine-tuned models.
-- Claims that generated theses are objectively validated opportunities.
+- Claims that generated MVPs prove validated market demand.

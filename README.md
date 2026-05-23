@@ -1,41 +1,47 @@
 # Forge
 
-Forge is a planned agentic research system for turning public developer pain signals into startup thesis drafts.
+Forge is a planned preference-aware MVP builder. It discovers product opportunities from public developer pain signals and user preferences, then launches a managed sandbox agent to build a PR-ready MVP in a separate generated repository.
 
-This repository is currently a project scaffold. It does not yet contain a working ingestion pipeline, agent service, database migration, or dashboard.
+This repository is currently a project scaffold. It does not yet contain a working ingestion pipeline, managed builder integration, database migration, dashboard, or template repo automation.
 
 ## Target Shape
 
-The intended vertical slice is:
+The intended v1 flow is:
 
-1. Collect a small number of public developer signals from reliable sources.
-2. Normalize and store those signals.
-3. Select one candidate opportunity.
-4. Run a bounded Bull vs. Bear critique loop.
-5. Produce a sourced thesis draft as Markdown plus structured JSON.
-6. Display stored theses and debate messages in a dashboard.
+1. User defines an explicit preference profile.
+2. Forge ingests or receives product opportunity signals.
+3. Forge ranks opportunities against the profile and observed user behavior.
+4. User approves an opportunity, not a full implementation plan.
+5. Forge creates a generated repo from a minimal MVP template repo.
+6. A managed Antigravity sandbox agent builds a runnable MVP using the stack that fits the opportunity.
+7. Forge surfaces a PR-ready app with README, tests or smoke checks, and run instructions.
 
 ## Proposed Components
 
 ```mermaid
 flowchart LR
-    A["Public Sources"] --> B["Ingestion"]
-    B --> C["Supabase"]
-    C --> D["Agent Pipeline"]
-    D --> E["Debate Messages"]
-    D --> F["Thesis Draft"]
-    E --> C
-    F --> C
-    C --> G["Dashboard"]
+    A["Signals + Manual Ideas"] --> B["Opportunity Scout"]
+    C["User Preferences"] --> D["Preference Modeler"]
+    E["Preference Events"] --> D
+    B --> F["Opportunity Ranking"]
+    D --> F
+    F --> G["Human Opportunity Approval"]
+    G --> H["Build Brief"]
+    H --> I["Template Repo"]
+    I --> J["Managed Builder Sandbox"]
+    J --> K["Generated Repo PR"]
+    K --> L["Build Review"]
 ```
 
 ## Constraints
 
-- Treat generated theses as research drafts, not validated investment advice.
-- Keep source attribution structured and visible.
-- Build local execution before cloud deployment.
-- Verify Google ADK and Vertex AI Agent Engine implementation details against current official docs at implementation time.
-- Do not put service-role keys or source API credentials in frontend code.
+- Generated MVPs are separate repos created from a template repo.
+- V1 allows code and free services only.
+- No paid APIs, production deploys, or secret-requiring integrations without a later approval step.
+- Antigravity is treated as an external managed sandbox capability; this repo should model its inputs, outputs, statuses, and logs without assuming local execution.
+- Keep source attribution structured and visible for opportunity recommendations.
+- Verify Google ADK, Vertex AI Agent Engine, and Antigravity implementation details against current official docs at implementation time.
+- Do not put service-role keys, source API credentials, or generated-repo secrets in frontend code.
 
 ## Docs For Future Agents
 

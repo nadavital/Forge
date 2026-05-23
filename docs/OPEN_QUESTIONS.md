@@ -4,34 +4,42 @@ Answer these before expanding scope. Do not block the first fixture-based vertic
 
 ## Product
 
-- Is the first dashboard private or public?
-- Is the first output a single thesis per run or a list of ranked candidates?
-- What fields make a thesis useful enough for a human to evaluate?
-- Should user Q&A exist in v1 or wait until the read-only dashboard works?
+- What fields are required in the first explicit preference profile?
+- Should manual ideas be entered before public source ingestion exists?
+- What makes an opportunity good enough to show for approval?
+- How should Forge display why a recommendation matches the user's taste?
 
-## Sources
+## Dreaming Loop
 
-- Which Hacker News path is first: newest, Ask HN, Show HN, or keyword search?
-- Which subreddits are allowed and worth supporting first?
-- Are GitHub issues, Stack Overflow, Discord exports, or changelogs in scope later?
-- What rate limits, caching rules, and source terms apply to each connector?
+- How much should approvals and rejections change future rankings?
+- Should launched MVPs carry more preference weight than approvals?
+- Should generated build failures reduce future ranking for similar ideas?
+- How should users reset or edit learned preferences?
 
-## Agents
+## Builder
 
-- What is the maximum debate turn count for the first version?
-- Does the Synthesizer have permission to reject an opportunity as too weak?
-- What JSON schema is the source of truth for thesis output?
-- Which claims require source IDs, and which may be marked as inference?
+- What template repo should generated MVPs start from?
+- How are generated repos named?
+- Who owns generated repos: the Forge org, the user, or a generated-project org?
+- What exact Antigravity API or workflow starts a sandbox build?
+- What logs and artifacts can Antigravity return?
+
+## Safety
+
+- What counts as a free service in v1?
+- Should services requiring user-created accounts be allowed if no paid plan is needed?
+- How should Forge detect committed secrets in generated PRs?
+- What policy blocks production deployment attempts?
 
 ## Infrastructure
 
 - Which Google Cloud project and region are authorized for Vertex AI Agent Engine?
-- Should the pipeline run on manual trigger first, then schedule later?
-- Should Q&A requests be handled by Next.js API routes, Supabase Edge Functions, or the agent service?
-- What authentication model protects write endpoints?
+- Should the first real build be manually triggered before any schedule exists?
+- Should build orchestration live in a Python service, Supabase Edge Functions, or Next.js API routes?
+- What authentication model protects profile edits, approvals, and build triggers?
 
 ## Frontend
 
-- Should the first UI optimize for internal analyst use or public reading?
-- Should realtime update by whole message first, leaving typing effects for later?
-- Should thesis Markdown render as an article, structured fields, or both?
+- Should the first dashboard optimize for opportunity review or build monitoring?
+- Should realtime update by whole build status first, leaving streaming logs for later?
+- Should generated MVP artifacts render inline or link to the generated repo PR?
