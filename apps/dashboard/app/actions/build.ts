@@ -18,7 +18,7 @@ export async function startAntigravityBuild({ projectId, opportunityId }: StartB
     ok: true as const,
     message:
       adapter === "managed"
-        ? "Managed Gemini builder finished. Forge recorded the generated PR and review artifacts."
+        ? "Managed Gemini builder started. Forge will update this opportunity when the PR is ready."
         : "Build completed. Simulated builder produced repo, PR, and review artifacts."
   };
 }

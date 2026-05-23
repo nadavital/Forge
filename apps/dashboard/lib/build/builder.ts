@@ -33,7 +33,7 @@ export async function queueOpportunityBuild(input: {
   );
   const adapter = selectBuilderAdapter({
     requested: input.adapter,
-    hasProjectRepo: Boolean(project.repo_url)
+    hasBuildTarget: true
   });
   const brief = createBuildBrief({
     adapter: adapter === "managed" ? "gemini_managed" : "simulated",
@@ -64,7 +64,7 @@ export async function queueOpportunityBuild(input: {
   });
 
   if (adapter === "managed") {
-    await runManagedGeminiBuilder({
+    void runManagedGeminiBuilder({
       projectId: input.projectId,
       opportunityId: input.opportunityId,
       build,
@@ -88,11 +88,11 @@ export async function queueOpportunityBuild(input: {
   return { build, adapter };
 }
 
-function selectBuilderAdapter(input: { requested?: BuilderAdapter; hasProjectRepo: boolean }): BuilderAdapter {
+function selectBuilderAdapter(input: { requested?: BuilderAdapter; hasBuildTarget: boolean }): BuilderAdapter {
   if (input.requested) return input.requested;
   if (process.env.FORGE_BUILDER_ADAPTER === "managed") return "managed";
   if (process.env.FORGE_BUILDER_ADAPTER === "simulated") return "simulated";
-  return canUseManagedGeminiBuilder() && input.hasProjectRepo ? "managed" : "simulated";
+  return canUseManagedGeminiBuilder() && input.hasBuildTarget ? "managed" : "simulated";
 }
 
 function redactBriefForArtifact(brief: BuildBrief): BuildBrief {

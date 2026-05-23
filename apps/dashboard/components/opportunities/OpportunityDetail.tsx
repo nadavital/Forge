@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useMemo, useState, useTransition } from "react";
+import { FormEvent, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ArrowUp, ChevronDown, ExternalLink, LoaderCircle, Sparkles } from "lucide-react";
 import { startAntigravityBuild } from "@/app/actions/build";
@@ -35,6 +35,12 @@ export function OpportunityDetail({ opportunity, projectId, projectName }: Oppor
   const building = opportunity.build && !["completed", "failed"].includes(opportunity.build.status);
   const built = opportunity.build?.status === "completed";
   const canBuild = !building && !built;
+
+  useEffect(() => {
+    if (!building) return;
+    const interval = window.setInterval(() => router.refresh(), 5000);
+    return () => window.clearInterval(interval);
+  }, [building, router]);
 
   function review(action: ReviewAction) {
     startTransition(async () => {
