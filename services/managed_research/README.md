@@ -42,6 +42,18 @@ python -m forge_managed_research.ingest \
   --dry-run
 ```
 
+Cheap deterministic public collection:
+
+```bash
+python -m forge_managed_research.ingest \
+  --pipeline source-collect \
+  --topic "AI agents developer tools production pain" \
+  --limit-per-source 20 \
+  --max-topics 5 \
+  --max-opportunities 5 \
+  --dry-run
+```
+
 Fixture-only validation:
 
 ```bash
@@ -79,6 +91,18 @@ python -m forge_managed_research.ingest \
 ```
 
 The trend-to-research pipeline stores retrieved media content and research findings in `pipeline_runs.metadata`, then stores normalized research-derived rows in `signals`, `opportunities`, `opportunity_signals`, and `opportunity_evaluations`.
+
+For volume, run deterministic public collection first. It uses cheap public APIs, stores collected media in `pipeline_runs.metadata`, and creates coarse seed topics, signals, and opportunities without spending managed-agent quota.
+
+```bash
+python -m forge_managed_research.ingest \
+  --pipeline source-collect \
+  --topic "AI agents developer tools production pain" \
+  --limit-per-source 25 \
+  --max-topics 8 \
+  --max-opportunities 8 \
+  --save
+```
 
 When the user does not know what to investigate, seed topics first:
 

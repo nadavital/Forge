@@ -8,10 +8,21 @@ import os
 import sys
 from pathlib import Path
 
+from .collectors import CollectorConfig, collect_public_media
 from .env import load_repo_env
 from .extract import extract_json_object, extract_json_payload
 from .interactions import ManagedAgentClient
-from .schemas import ManagedResearchResult, SeedDiscoveryResult, TrendResearchPipelineResult
+from .local_synthesis import (
+    synthesize_opportunities,
+    synthesize_seed_topics,
+    synthesize_signals,
+)
+from .schemas import (
+    ManagedResearchResult,
+    SeedDiscoveryResult,
+    SourceCollectionResult,
+    TrendResearchPipelineResult,
+)
 from .supabase import SupabaseWriter
 
 
@@ -20,7 +31,13 @@ def main() -> None:
     parser.add_argument("--topic")
     parser.add_argument(
         "--pipeline",
-        choices=["single", "trend-research", "seed-topics", "auto-trend-research"],
+        choices=[
+            "single",
+            "trend-research",
+            "seed-topics",
+            "auto-trend-research",
+            "source-collect",
+        ],
         default="single",
     )
     parser.add_argument("--agent", choices=["antigravity", "deep-research"], default="antigravity")
@@ -34,11 +51,18 @@ def main() -> None:
     parser.add_argument("--research-input-file", help="Use existing ResearchAnalyst output for trend-research.")
     parser.add_argument("--seed-input-file", help="Use existing TopicSeeder output for seed-topics or auto-trend-research.")
     parser.add_argument("--max-topics", type=int, default=3)
+    parser.add_argument("--limit-per-source", type=int, default=10)
+    parser.add_argument("--max-opportunities", type=int, default=5)
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parents[3]
     load_repo_env(repo_root)
     agents_dir = repo_root / ".agents"
+
+    if args.pipeline == "source-collect":
+        summary = run_source_collect(args)
+        print(json.dumps(summary, indent=2, sort_keys=True))
+        return
 
     if args.pipeline == "seed-topics":
         summary = run_seed_topics(args, agents_dir)
@@ -283,6 +307,79 @@ def run_auto_trend_research(args: argparse.Namespace, agents_dir: Path) -> dict[
         "seed_summary": seed_summary,
         "runs": runs,
     }
+
+
+def run_source_collect(args: argparse.Namespace) -> dict[str, object]:
+    query = args.topic or "AI agents developer tools production pain"
+    media_items = collect_public_media(
+        CollectorConfig(
+            query=query,
+            limit_per_source=max(1, args.limit_per_source),
+            github_token=os.environ.get("GITHUB_TOKEN"),
+        )
+    )
+    seed_topics = synthesize_seed_topics(media_items, max_topics=max(1, args.max_topics))
+    signals = synthesize_signals(media_items)
+    opportunities = synthesize_opportunities(
+        media_items,
+        signals,
+        max_opportunities=max(1, args.max_opportunities),
+    )
+    result = SourceCollectionResult(
+        query=query,
+        media_items=media_items,
+        seed_topics=seed_topics,
+        signals=signals,
+        opportunities=opportunities,
+    )
+
+    summary: dict[str, object] = {
+        "pipeline": "source_collect",
+        "query": query,
+        "media_items": len(media_items),
+        "seed_topics": len(seed_topics),
+        "signals": len(signals),
+        "opportunities": len(opportunities),
+        "sources": _count_sources(media_items),
+        "topics": [
+            {
+                "topic": topic.topic,
+                "title": topic.title,
+                "score": topic.score,
+                "tags": topic.tags,
+            }
+            for topic in seed_topics
+        ],
+    }
+    if args.verbose:
+        summary["preview"] = {
+            "media_items": [
+                item.to_metadata()
+                for item in media_items[:5]
+            ],
+            "signals": [
+                signal.to_supabase_row()
+                for signal in signals[:5]
+            ],
+            "opportunities": [
+                opportunity.to_supabase_row(pipeline_run_id=None)
+                for opportunity in opportunities[:5]
+            ],
+        }
+
+    if args.save:
+        summary["supabase"] = SupabaseWriter().save_source_collection(result)
+    elif not args.dry_run:
+        summary["note"] = "Dry-run by default. Pass --save to write to Supabase."
+    return summary
+
+
+def _count_sources(media_items: list[object]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in media_items:
+        source = getattr(item, "source", "unknown")
+        counts[source] = counts.get(source, 0) + 1
+    return counts
 
 
 if __name__ == "__main__":

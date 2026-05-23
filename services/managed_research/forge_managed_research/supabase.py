@@ -8,7 +8,12 @@ from typing import Any
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from .schemas import ManagedResearchResult, SeedDiscoveryResult, TrendResearchPipelineResult
+from .schemas import (
+    ManagedResearchResult,
+    SeedDiscoveryResult,
+    SourceCollectionResult,
+    TrendResearchPipelineResult,
+)
 
 
 class SupabaseWriter:
@@ -227,4 +232,97 @@ class SupabaseWriter:
         return {
             "pipeline_run_id": run["id"],
             "seed_topics_saved_in_run_metadata": len(result.seed_topics),
+        }
+
+    def save_source_collection(self, result: SourceCollectionResult) -> dict[str, Any]:
+        run = self.insert(
+            "pipeline_runs",
+            [
+                {
+                    "run_type": "managed",
+                    "status": "completed",
+                    "trigger": "remote",
+                    "metadata": {
+                        "pipeline": "source_collect",
+                        "query": result.query,
+                        "collector": result.collector,
+                        "media_item_count": len(result.media_items),
+                        "seed_topic_count": len(result.seed_topics),
+                        "signal_count": len(result.signals),
+                        "opportunity_count": len(result.opportunities),
+                        "media_items": [
+                            item.to_metadata()
+                            for item in result.media_items
+                        ],
+                        "seed_topics": [
+                            topic.to_metadata()
+                            for topic in result.seed_topics
+                        ],
+                    },
+                }
+            ],
+        )[0]
+        run_id = run["id"]
+
+        signal_rows = self.insert(
+            "signals",
+            [
+                {
+                    **signal.to_supabase_row(),
+                    "metadata": {
+                        **signal.metadata,
+                        "pipeline": "source_collect",
+                        "pipeline_run_id": run_id,
+                        "collector": result.collector,
+                    },
+                }
+                for signal in result.signals
+            ],
+        )
+        opportunity_rows = self.insert(
+            "opportunities",
+            [
+                opportunity.to_supabase_row(pipeline_run_id=run_id)
+                for opportunity in result.opportunities
+            ],
+        )
+
+        evidence_rows: list[dict[str, Any]] = []
+        evaluation_rows: list[dict[str, Any]] = []
+        for opportunity, opportunity_row in zip(result.opportunities, opportunity_rows, strict=False):
+            opportunity_id = opportunity_row.get("id")
+            if not opportunity_id:
+                continue
+            for index in opportunity.source_indexes:
+                if 0 <= index < len(signal_rows):
+                    evidence_rows.append(
+                        {
+                            "opportunity_id": opportunity_id,
+                            "signal_id": signal_rows[index]["id"],
+                            "relevance": opportunity.score,
+                            "notes": opportunity.score_rationale,
+                        }
+                    )
+            evaluation_rows.append(
+                {
+                    "opportunity_id": opportunity_id,
+                    "evaluator": "deterministic_source_collect",
+                    "content": opportunity.score_rationale,
+                    "scores": {
+                        "overall": opportunity.score,
+                        "media_item_count": len(result.media_items),
+                    },
+                }
+            )
+
+        self.insert("opportunity_signals", evidence_rows)
+        self.insert("opportunity_evaluations", evaluation_rows)
+        return {
+            "pipeline_run_id": run_id,
+            "media_items_saved_in_run_metadata": len(result.media_items),
+            "seed_topics_saved_in_run_metadata": len(result.seed_topics),
+            "signals_saved": len(signal_rows),
+            "opportunities_saved": len(opportunity_rows),
+            "evidence_rows_saved": len(evidence_rows),
+            "evaluation_rows_saved": len(evaluation_rows),
         }

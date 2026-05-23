@@ -312,3 +312,17 @@ class SeedDiscoveryResult:
             agent=agent,
             theme=theme,
         )
+
+
+@dataclass
+class SourceCollectionResult:
+    query: str
+    media_items: list[MediaItem]
+    seed_topics: list[SeedTopic]
+    signals: list[ManagedSignal]
+    opportunities: list[ManagedOpportunity]
+    collector: str = "public_collectors"
+
+    @property
+    def raw_text(self) -> str:
+        return ""
