@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 
+from .env import load_repo_env
 from .extract import extract_json_payload
 from .interactions import ManagedAgentClient
 from .schemas import ManagedResearchResult
@@ -23,6 +24,7 @@ def main() -> None:
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parents[3]
+    load_repo_env(repo_root)
     agents_dir = repo_root / ".agents"
 
     if args.input_file:
@@ -61,4 +63,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
