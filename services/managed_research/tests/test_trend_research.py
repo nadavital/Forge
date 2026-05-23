@@ -1,5 +1,5 @@
 from forge_managed_research.extract import extract_json_object, extract_json_payload
-from forge_managed_research.schemas import TrendResearchPipelineResult
+from forge_managed_research.schemas import SeedDiscoveryResult, TrendResearchPipelineResult
 
 
 def test_trend_research_pipeline_result_from_payloads():
@@ -35,3 +35,22 @@ def test_trend_research_pipeline_result_from_payloads():
     assert len(result.research.signals) == 1
     assert len(result.research.opportunities) == 1
     assert result.research_findings[0].media_item_indexes == [0]
+
+
+def test_seed_discovery_result_from_payload():
+    raw = """
+```json
+{"seed_topics":[{"topic":"agent cost controls","title":"Cost controls","score":0.9,"sources":["https://example.com"],"tags":["agents"]}]}
+```
+"""
+    payload = extract_json_object(raw, required_any=("seed_topics",))
+    result = SeedDiscoveryResult.from_payload(
+        payload,
+        raw_text=raw,
+        agent="antigravity",
+        theme="developer tool pain",
+    )
+
+    assert len(result.seed_topics) == 1
+    assert result.seed_topics[0].topic == "agent cost controls"
+    assert result.seed_topics[0].score == 0.9

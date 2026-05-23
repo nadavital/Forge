@@ -11,14 +11,18 @@ from pathlib import Path
 from .env import load_repo_env
 from .extract import extract_json_object, extract_json_payload
 from .interactions import ManagedAgentClient
-from .schemas import ManagedResearchResult, TrendResearchPipelineResult
+from .schemas import ManagedResearchResult, SeedDiscoveryResult, TrendResearchPipelineResult
 from .supabase import SupabaseWriter
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run managed-agent Forge ingestion.")
-    parser.add_argument("--topic", required=True)
-    parser.add_argument("--pipeline", choices=["single", "trend-research"], default="single")
+    parser.add_argument("--topic")
+    parser.add_argument(
+        "--pipeline",
+        choices=["single", "trend-research", "seed-topics", "auto-trend-research"],
+        default="single",
+    )
     parser.add_argument("--agent", choices=["antigravity", "deep-research"], default="antigravity")
     parser.add_argument("--trend-agent", choices=["antigravity"], default="antigravity")
     parser.add_argument("--research-agent", choices=["antigravity", "deep-research"], default="antigravity")
@@ -28,11 +32,23 @@ def main() -> None:
     parser.add_argument("--input-file", help="Use existing managed-agent output instead of calling Gemini.")
     parser.add_argument("--trend-input-file", help="Use existing TrendScout output for trend-research.")
     parser.add_argument("--research-input-file", help="Use existing ResearchAnalyst output for trend-research.")
+    parser.add_argument("--seed-input-file", help="Use existing TopicSeeder output for seed-topics or auto-trend-research.")
+    parser.add_argument("--max-topics", type=int, default=3)
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parents[3]
     load_repo_env(repo_root)
     agents_dir = repo_root / ".agents"
+
+    if args.pipeline == "seed-topics":
+        summary = run_seed_topics(args, agents_dir)
+        print(json.dumps(summary, indent=2, sort_keys=True))
+        return
+
+    if args.pipeline == "auto-trend-research":
+        summary = run_auto_trend_research(args, agents_dir)
+        print(json.dumps(summary, indent=2, sort_keys=True))
+        return
 
     if args.pipeline == "trend-research":
         summary = run_trend_research(args, agents_dir)
@@ -41,6 +57,8 @@ def main() -> None:
 
     if args.input_file and (args.trend_input_file or args.research_input_file):
         raise SystemExit("--input-file cannot be combined with trend-research input files.")
+    if not args.topic:
+        raise SystemExit("--topic is required for single managed research.")
 
     if args.input_file:
         raw_text = Path(args.input_file).read_text()
@@ -78,6 +96,8 @@ def main() -> None:
 
 
 def run_trend_research(args: argparse.Namespace, agents_dir: Path) -> dict[str, object]:
+    if not args.topic:
+        raise SystemExit("--topic is required for trend-research.")
     client: ManagedAgentClient | None = None
 
     if args.trend_input_file:
@@ -168,6 +188,101 @@ def run_trend_research(args: argparse.Namespace, agents_dir: Path) -> dict[str, 
         summary["note"] = "Dry-run by default. Pass --save to write to Supabase."
 
     return summary
+
+
+def run_seed_topics(args: argparse.Namespace, agents_dir: Path) -> dict[str, object]:
+    theme = args.topic or "developer tool and AI product pain from current public technical communities"
+    if args.seed_input_file:
+        raw_text = Path(args.seed_input_file).read_text()
+    else:
+        print("seed_topics: running TopicSeeder", file=sys.stderr)
+        client = ManagedAgentClient(api_key=os.environ.get("GEMINI_API_KEY"))
+        raw_text = client.run_topic_seeder(
+            theme,
+            agents_dir=agents_dir,
+            max_topics=args.max_topics,
+        )
+        print("seed_topics: TopicSeeder completed", file=sys.stderr)
+
+    payload = extract_json_object(raw_text, required_any=("seed_topics",))
+    payload.setdefault("seed_topics", [])
+    result = SeedDiscoveryResult.from_payload(
+        payload,
+        raw_text=raw_text,
+        agent="antigravity",
+        theme=theme,
+    )
+    seed_topics = sorted(result.seed_topics, key=lambda topic: topic.score, reverse=True)
+    if args.max_topics > 0:
+        seed_topics = seed_topics[: args.max_topics]
+        result.seed_topics = seed_topics
+
+    summary: dict[str, object] = {
+        "pipeline": "seed_topics",
+        "theme": theme,
+        "agent": result.agent,
+        "seed_topics": len(result.seed_topics),
+        "raw_output_chars": len(raw_text),
+        "topics": [
+            {
+                "topic": topic.topic,
+                "title": topic.title,
+                "score": topic.score,
+                "tags": topic.tags,
+            }
+            for topic in result.seed_topics
+        ],
+    }
+    if args.verbose:
+        summary["preview"] = {
+            "seed_topics": [
+                topic.to_metadata()
+                for topic in result.seed_topics
+            ]
+        }
+
+    if args.save:
+        summary["supabase"] = SupabaseWriter().save_seed_discovery(result)
+    elif not args.dry_run:
+        summary["note"] = "Dry-run by default. Pass --save to write to Supabase."
+    return summary
+
+
+def run_auto_trend_research(args: argparse.Namespace, agents_dir: Path) -> dict[str, object]:
+    seed_args = argparse.Namespace(**vars(args))
+    seed_args.save = False
+    seed_args.dry_run = True
+    seed_summary = run_seed_topics(seed_args, agents_dir)
+    seed_topics = [
+        item["topic"]
+        for item in seed_summary.get("topics", [])
+        if isinstance(item, dict) and item.get("topic")
+    ]
+
+    runs: list[dict[str, object]] = []
+    for topic in seed_topics[: args.max_topics]:
+        trend_args = argparse.Namespace(**vars(args))
+        trend_args.topic = topic
+        trend_args.trend_input_file = None
+        trend_args.research_input_file = None
+        trend_args.pipeline = "trend-research"
+        try:
+            runs.append(run_trend_research(trend_args, agents_dir))
+        except Exception as exc:  # pragma: no cover - exercised by live managed agents
+            runs.append(
+                {
+                    "topic": topic,
+                    "status": "failed",
+                    "error": str(exc),
+                }
+            )
+            break
+
+    return {
+        "pipeline": "auto_trend_research",
+        "seed_summary": seed_summary,
+        "runs": runs,
+    }
 
 
 if __name__ == "__main__":

@@ -245,3 +245,70 @@ class TrendResearchPipelineResult:
                 if isinstance(item, dict)
             ],
         )
+
+
+@dataclass
+class SeedTopic:
+    topic: str
+    title: str
+    rationale: str
+    score: float
+    sources: list[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> "SeedTopic":
+        raw_score = value.get("score", 0)
+        try:
+            score = max(0.0, min(1.0, float(raw_score)))
+        except (TypeError, ValueError):
+            score = 0.0
+        topic = str(value.get("topic") or value.get("title") or "Untitled topic")
+        return cls(
+            topic=topic,
+            title=str(value.get("title") or topic),
+            rationale=str(value.get("rationale") or value.get("score_rationale") or ""),
+            score=score,
+            sources=[str(item) for item in value.get("sources", []) if item],
+            tags=[str(item) for item in value.get("tags", []) if item],
+            metadata=value.get("metadata") if isinstance(value.get("metadata"), dict) else {},
+        )
+
+    def to_metadata(self) -> dict[str, Any]:
+        return {
+            "topic": self.topic,
+            "title": self.title,
+            "rationale": self.rationale,
+            "score": self.score,
+            "sources": self.sources,
+            "tags": self.tags,
+            "metadata": self.metadata,
+        }
+
+
+@dataclass
+class SeedDiscoveryResult:
+    raw_text: str
+    seed_topics: list[SeedTopic]
+    agent: str
+    theme: str
+
+    @classmethod
+    def from_payload(
+        cls,
+        payload: dict[str, Any],
+        raw_text: str,
+        agent: str,
+        theme: str,
+    ) -> "SeedDiscoveryResult":
+        return cls(
+            raw_text=raw_text,
+            seed_topics=[
+                SeedTopic.from_dict(item)
+                for item in payload.get("seed_topics", [])
+                if isinstance(item, dict)
+            ],
+            agent=agent,
+            theme=theme,
+        )

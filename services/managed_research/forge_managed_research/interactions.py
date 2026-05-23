@@ -81,6 +81,20 @@ class ManagedAgentClient:
             timeout_seconds=timeout_seconds,
         )
 
+    def run_topic_seeder(
+        self,
+        theme: str,
+        agents_dir: Path,
+        max_topics: int,
+        timeout_seconds: int = 300,
+    ) -> str:
+        return self.run_antigravity_prompt(
+            prompt=_topic_seed_prompt(theme, max_topics=max_topics),
+            agents_dir=agents_dir,
+            system_instruction="You are Forge's TopicSeeder managed trend agent. Discover promising research topics from public evidence.",
+            timeout_seconds=timeout_seconds,
+        )
+
     def run_research_analyst(
         self,
         topic: str,
@@ -220,6 +234,42 @@ Return exactly one fenced JSON block:
       "metadata": {{
         "why_relevant": "...",
         "content_type": "complaint|issue|launch|discussion|article|repo"
+      }}
+    }}
+  ]
+}}
+"""
+
+
+def _topic_seed_prompt(theme: str, max_topics: int) -> str:
+    return f"""
+You are TopicSeeder for Forge.
+
+The user may not know what product direction to investigate. Discover up to {max_topics} promising research topics from current public technical pain around this broad theme:
+
+{theme}
+
+Look across public developer discussions, forums, repository issues, launch comments, docs friction, and technical media. Return candidate topics, not full opportunities. Each topic should be specific enough that a follow-up TrendScout can retrieve evidence.
+
+Rules:
+- Prefer repeated, concrete pain over generic hype.
+- Include source URLs that justify why the topic is worth researching.
+- Avoid topics that require paid/private data to investigate.
+- Do not claim market validation.
+
+Return exactly one fenced JSON block:
+{{
+  "seed_topics": [
+    {{
+      "topic": "specific research query for TrendScout",
+      "title": "short topic title",
+      "rationale": "why this seems worth a Forge trend-to-research run",
+      "score": 0.0,
+      "sources": ["https://..."],
+      "tags": ["..."],
+      "metadata": {{
+        "observed_pattern": "...",
+        "risk": "..."
       }}
     }}
   ]

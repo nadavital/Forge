@@ -8,7 +8,7 @@ from typing import Any
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from .schemas import ManagedResearchResult, TrendResearchPipelineResult
+from .schemas import ManagedResearchResult, SeedDiscoveryResult, TrendResearchPipelineResult
 
 
 class SupabaseWriter:
@@ -200,4 +200,31 @@ class SupabaseWriter:
             "opportunities_saved": len(opportunity_rows),
             "evidence_rows_saved": len(evidence_rows),
             "evaluation_rows_saved": len(evaluation_rows),
+        }
+
+    def save_seed_discovery(self, result: SeedDiscoveryResult) -> dict[str, Any]:
+        run = self.insert(
+            "pipeline_runs",
+            [
+                {
+                    "run_type": "managed",
+                    "status": "completed",
+                    "trigger": "managed_agent",
+                    "metadata": {
+                        "pipeline": "seed_topics",
+                        "theme": result.theme,
+                        "agent": result.agent,
+                        "seed_topic_count": len(result.seed_topics),
+                        "seed_topics": [
+                            topic.to_metadata()
+                            for topic in result.seed_topics
+                        ],
+                        "raw_output_chars": len(result.raw_text),
+                    },
+                }
+            ],
+        )[0]
+        return {
+            "pipeline_run_id": run["id"],
+            "seed_topics_saved_in_run_metadata": len(result.seed_topics),
         }

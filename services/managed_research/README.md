@@ -46,6 +46,14 @@ Fixture-only validation:
 
 ```bash
 python -m forge_managed_research.ingest \
+  --pipeline seed-topics \
+  --seed-input-file tests/fixtures/seed_output.md \
+  --max-topics 2 \
+  --dry-run
+```
+
+```bash
+python -m forge_managed_research.ingest \
   --pipeline trend-research \
   --topic "fixture auth check" \
   --trend-input-file tests/fixtures/trend_output.md \
@@ -71,6 +79,26 @@ python -m forge_managed_research.ingest \
 ```
 
 The trend-to-research pipeline stores retrieved media content and research findings in `pipeline_runs.metadata`, then stores normalized research-derived rows in `signals`, `opportunities`, `opportunity_signals`, and `opportunity_evaluations`.
+
+When the user does not know what to investigate, seed topics first:
+
+```bash
+python -m forge_managed_research.ingest \
+  --pipeline seed-topics \
+  --topic "developer tool and AI product pain" \
+  --max-topics 5 \
+  --save
+```
+
+Or run seeded topics through the trend-to-research pipeline:
+
+```bash
+python -m forge_managed_research.ingest \
+  --pipeline auto-trend-research \
+  --topic "developer tool and AI product pain" \
+  --max-topics 3 \
+  --save
+```
 
 ```bash
 python -m forge_managed_research.ingest \

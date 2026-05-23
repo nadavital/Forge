@@ -4,8 +4,9 @@
 
 Implement a two-stage managed-agent ingestion pipeline:
 
-1. A managed media/trend agent retrieves current public media, social, forum, and repository content around a configured market or product theme.
-2. A managed research agent uses only the retrieved trend set as grounding evidence, expands the most promising threads with cited research, and produces structured signals and opportunities.
+1. If the user does not provide a specific topic, a managed topic-seeding agent discovers promising research topics from broad public technical pain.
+2. A managed media/trend agent retrieves current public media, social, forum, and repository content around a configured or seeded market/product theme.
+3. A managed research agent uses only the retrieved trend set as grounding evidence, expands the most promising threads with cited research, and produces structured signals and opportunities.
 
 Forge must keep validation and Supabase writes in local controlled code. Managed agents collect and research; Forge parses, validates, links, and persists.
 
@@ -22,6 +23,7 @@ If the current database schema is not ready for dedicated `media_items` or `rese
 
 ## Agent Roles
 
+- `TopicSeeder`: managed trend agent. Discovers specific research topics from broad public technical pain when the user does not know what they want.
 - `TrendScout`: managed media/trend agent. Finds recent public discussion, repo activity, launch posts, issue threads, articles, and forum complaints. It should return evidence, not conclusions.
 - `ResearchAnalyst`: managed research agent. Takes `TrendScout` output as input and researches only the strongest trend threads. It must distinguish sourced facts from inference.
 - `ForgeValidator`: local code. Extracts JSON, rejects malformed records, preserves raw output references, and writes to Supabase.
