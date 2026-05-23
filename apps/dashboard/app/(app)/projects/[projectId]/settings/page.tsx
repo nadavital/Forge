@@ -42,7 +42,7 @@ export default async function ProjectSettingsPage({ params, searchParams }: Proj
 
       <div className="settings-stack">
         <ProjectSettingsForm projectId={project.id} settings={settings} />
-        <ReflectionPanel proposals={proposals} />
+        <ReflectionPanel projectId={project.id} proposals={proposals} />
       </div>
     </main>
   );

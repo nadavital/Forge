@@ -7,6 +7,7 @@ import {
 } from "@/lib/db/repository";
 import { discoverGitHubRepo } from "@/lib/github/repo-discovery";
 import { discoverNewProductIdeas } from "@/lib/ideas/new-product-discovery";
+import { rankOpportunitiesWithPreferences } from "@/lib/scoring/preference-ranking";
 
 export async function triggerProjectPipeline(projectId: string): Promise<{ runId: string; message: string }> {
   const run = await createPipelineRun(projectId);
@@ -24,7 +25,12 @@ export async function triggerProjectPipeline(projectId: string): Promise<{ runId
       projectId,
       runId: run.id,
       signals: discovery.signals,
-      opportunities: discovery.opportunities
+      opportunities: rankOpportunitiesWithPreferences({
+        opportunities: discovery.opportunities,
+        existingOpportunities: bundle.opportunities,
+        preferenceEvents: bundle.preferenceEvents,
+        preferences: bundle.preferences
+      })
     });
 
     await completePipelineRun(run.id, {
@@ -52,7 +58,12 @@ export async function triggerProjectPipeline(projectId: string): Promise<{ runId
     projectId,
     runId: run.id,
     signals: discovery.signals,
-    opportunities: discovery.opportunities
+    opportunities: rankOpportunitiesWithPreferences({
+      opportunities: discovery.opportunities,
+      existingOpportunities: bundle.opportunities,
+      preferenceEvents: bundle.preferenceEvents,
+      preferences: bundle.preferences
+    })
   });
 
   await completePipelineRun(run.id, {

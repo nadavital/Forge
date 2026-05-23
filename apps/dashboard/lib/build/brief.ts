@@ -105,6 +105,7 @@ export function createManagedBuilderPrompt(brief: BuildBrief): string {
         logs: "Short build and review summary.",
         artifacts: [
           { type: "readme", content: "README summary or URL." },
+          { type: "run_instruction", content: "How to run the MVP locally." },
           { type: "test_result", content: "Smoke check output." },
           { type: "service_manifest", content: "Free services used, or none." }
         ]

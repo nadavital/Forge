@@ -694,12 +694,13 @@ Implemented now:
 - Supabase writes to existing ingestion/evaluation tables.
 - Dashboard API routes under `forge_managed_research.api`.
 - Project, schedule, run, action, and build migration in `supabase/migrations/0002_dashboard_contract.sql`.
+- Local dashboard demo loop for preference-aware reranking, generated prototype option records, BuildReviewer artifact checks, and reflection proposal generation from stored events/builds.
 
 Not implemented yet:
 
 - Applied remote dashboard migration, unless a developer has run `0002_dashboard_contract.sql` in Supabase.
-- Schedule runner.
-- Antigravity builder adapter for project repo PRs. The API currently stores the build prompt context and marks the build record complete.
+- Hosted schedule runner. A local due-trigger helper exists for demo/local worker wiring.
+- Production Antigravity adapter hardening. The dashboard can select a Gemini managed builder when configured, but the hackathon-safe path remains the deterministic simulated builder.
 - Realtime dashboard subscriptions.
 
 Build the frontend against this contract while backend fills those missing pieces.

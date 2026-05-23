@@ -1,4 +1,5 @@
 import { newId, readLocalStore, writeLocalStore } from "@/lib/db/local-db";
+import { createPrototypeOptionDraft } from "@/lib/prototypes/prototype-options";
 import { createSupabaseClient, isSupabaseConfigured } from "@/lib/db/supabase";
 import { buildProjectDefaults, githubSourcePatch, normalizeGithubRepository } from "@/lib/project-onboarding";
 import type {
@@ -10,6 +11,7 @@ import type {
   DbPipelineRun,
   DbPreferenceEvent,
   DbProject,
+  DbReflectionRun,
   DbReflectionProposal,
   DbSignal,
   DbSourceConfig,
@@ -249,6 +251,13 @@ export async function replaceProjectDiscoveryRecords(input: {
       scores: evaluation.scores
     }))
   );
+  const prototypeRows = opportunityRows.map((opportunity) => ({
+    id: newId("proto"),
+    project_id: input.projectId,
+    opportunity_id: opportunity.id,
+    prototype_type: "clickable_demo",
+    ...createPrototypeOptionDraft(opportunity)
+  }));
 
   if (isSupabaseConfigured()) {
     const supabase = createSupabaseClient()!;
@@ -256,6 +265,7 @@ export async function replaceProjectDiscoveryRecords(input: {
     for (const opportunity of opportunityRows) await supabase.insert("opportunities", opportunity);
     for (const link of links) await supabase.insert("opportunity_signals", link);
     for (const evaluation of evaluations) await supabase.insert("opportunity_evaluations", evaluation);
+    for (const prototype of prototypeRows) await supabase.insert("prototype_options", prototype);
     return;
   }
 
@@ -291,6 +301,7 @@ export async function replaceProjectDiscoveryRecords(input: {
     store.opportunities.unshift(...opportunityRows);
     store.opportunity_signals.unshift(...links);
     store.opportunity_evaluations.unshift(...evaluations);
+    store.prototype_options.unshift(...prototypeRows);
   });
 }
 
@@ -375,6 +386,50 @@ export async function createMvpBuild(input: {
   });
 
   return build;
+}
+
+export async function createReflectionRun(input: {
+  projectId: string;
+  summary: string;
+  evidence: JsonObject;
+  proposals: Array<Omit<DbReflectionProposal, "id" | "reflection_run_id" | "status">>;
+}): Promise<DbReflectionRun> {
+  const now = new Date().toISOString();
+  const run: DbReflectionRun = {
+    id: newId("refl_run"),
+    project_id: input.projectId,
+    status: "completed",
+    summary: input.summary,
+    evidence: input.evidence,
+    created_at: now,
+    completed_at: now
+  };
+  const proposals: DbReflectionProposal[] = input.proposals.map((proposal) => ({
+    id: newId("refl_prop"),
+    reflection_run_id: run.id,
+    proposal_type: proposal.proposal_type,
+    risk_level: proposal.risk_level,
+    title: proposal.title,
+    rationale: proposal.rationale,
+    patch: proposal.patch,
+    status: "proposed"
+  }));
+
+  if (isSupabaseConfigured()) {
+    const supabase = createSupabaseClient()!;
+    const insertedRun = await supabase.insert("reflection_runs", run);
+    for (const proposal of proposals) {
+      await supabase.insert("reflection_proposals", proposal);
+    }
+    return insertedRun;
+  }
+
+  await mutateStore((store) => {
+    store.reflection_runs.unshift(run);
+    store.reflection_proposals.unshift(...proposals);
+  });
+
+  return run;
 }
 
 export async function updateMvpBuild(buildId: string, patch: Partial<DbMvpBuild>): Promise<DbMvpBuild> {
@@ -561,6 +616,23 @@ export async function updateProjectSettings(input: {
     for (const trigger of input.triggers) {
       const row = store.triggers.find((entry) => entry.id === trigger.id);
       if (row) row.status = trigger.status;
+    }
+  });
+}
+
+export async function markTriggerRan(triggerId: string): Promise<void> {
+  const patch = { last_run_at: new Date().toISOString() };
+
+  if (isSupabaseConfigured()) {
+    const supabase = createSupabaseClient()!;
+    await supabase.update("triggers", triggerId, patch);
+    return;
+  }
+
+  await mutateStore((store) => {
+    const trigger = store.triggers.find((row) => row.id === triggerId);
+    if (trigger) {
+      trigger.last_run_at = patch.last_run_at;
     }
   });
 }

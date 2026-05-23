@@ -8,6 +8,7 @@ export type OpportunityNarrative = {
   taste: string;
   tension: string;
   mvp: string;
+  prototypes?: Array<{ title: string; status: string }>;
   signalCount: number;
   signals: Array<{ text: string; url?: string | null }>;
   buildLine?: string;
@@ -63,6 +64,10 @@ export function buildOpportunityNarrative(opportunity: ContractOpportunity): Opp
     taste: opportunity.tasteCritique,
     tension,
     mvp: opportunity.mvpConcept,
+    prototypes: opportunity.prototypes.map((prototype) => ({
+      title: prototype.title,
+      status: prototype.status
+    })),
     signalCount: opportunity.evidence.length,
     signals: opportunity.evidence.map((item) => ({
       text: item.label,

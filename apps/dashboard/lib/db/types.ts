@@ -106,8 +106,11 @@ export type DbPrototype = {
   project_id?: string | null;
   opportunity_id?: string | null;
   title?: string | null;
+  prototype_type?: string | null;
+  summary?: string | null;
   status?: string | null;
   artifact_url?: string | null;
+  artifact_payload?: JsonObject | null;
 };
 
 export type DbMvpBuild = {
@@ -151,6 +154,7 @@ export type DbReflectionProposal = {
   risk_level: string;
   title: string;
   rationale?: string | null;
+  patch?: JsonObject | null;
   status: string;
 };
 
