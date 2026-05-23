@@ -1510,13 +1510,13 @@ dt {
 
 .settings-stack {
   display: grid;
-  gap: 22px;
+  gap: 18px;
   margin-top: 26px;
 }
 
 .settings-section {
   border-top: 1px solid var(--line);
-  padding-top: 18px;
+  padding-top: 16px;
 }
 
 .settings-section h2 {
@@ -1539,7 +1539,13 @@ dt {
 }
 
 .danger-card {
-  border: 1px solid rgba(179, 38, 30, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid rgba(179, 38, 30, 0.14);
+  border-radius: 12px;
+  padding: 14px 16px;
 }
 
 .settings-desc {
@@ -1560,49 +1566,10 @@ dt {
   overflow: hidden;
 }
 
-.settings-checklist {
+.settings-two-col {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 8px;
-  margin-top: 12px;
-  list-style: none;
-  padding: 0;
-}
-
-.settings-checklist li {
-  display: flex;
-  gap: 10px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.56);
-  padding: 12px;
-}
-
-.settings-checklist .check-complete,
-.settings-checklist .check-pending {
-  width: 18px;
-  height: 18px;
-  margin-top: 1px;
-  flex-shrink: 0;
-}
-
-.settings-checklist .check-complete {
-  color: var(--green);
-}
-
-.settings-checklist .check-pending {
-  color: var(--faint);
-}
-
-.settings-checklist strong {
-  display: block;
-  font-size: 14px;
-}
-
-.settings-checklist span {
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.4;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
 }
 
 .settings-rows li {
@@ -1773,6 +1740,15 @@ dt {
   .composer-primary {
     justify-content: space-between;
     margin-left: 0;
+  }
+
+  .settings-two-col {
+    grid-template-columns: 1fr;
+  }
+
+  .danger-card {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 
