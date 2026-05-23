@@ -50,6 +50,7 @@ apps/
   dashboard/         # Internal Forge dashboard
 services/
   agents/            # Agent orchestration and prompt contracts
+  managed_research/  # Gemini managed-agent orchestration
   ingestion/         # Source clients and normalization
   builder/           # Simulated and managed builder adapters
   reflection/         # Forge self-improvement proposal generation

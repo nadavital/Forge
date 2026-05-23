@@ -1,0 +1,8 @@
+Metadata-Version: 2.4
+Name: forge-managed-research
+Version: 0.1.0
+Summary: Gemini managed-agent orchestrator for Forge research and ingestion.
+Requires-Python: >=3.10
+Requires-Dist: google-genai>=1.55.0
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0.0; extra == "dev"

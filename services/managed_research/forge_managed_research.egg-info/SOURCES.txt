@@ -1,0 +1,15 @@
+README.md
+pyproject.toml
+forge_managed_research/__init__.py
+forge_managed_research/env.py
+forge_managed_research/extract.py
+forge_managed_research/ingest.py
+forge_managed_research/interactions.py
+forge_managed_research/schemas.py
+forge_managed_research/supabase.py
+forge_managed_research.egg-info/PKG-INFO
+forge_managed_research.egg-info/SOURCES.txt
+forge_managed_research.egg-info/dependency_links.txt
+forge_managed_research.egg-info/requires.txt
+forge_managed_research.egg-info/top_level.txt
+tests/test_extract.py

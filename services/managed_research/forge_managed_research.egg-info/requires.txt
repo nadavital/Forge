@@ -1,0 +1,4 @@
+google-genai>=1.55.0
+
+[dev]
+pytest>=8.0.0

@@ -37,6 +37,7 @@ Exit criteria:
 - Implement project creation for connected-product and new-product/sample modes.
 - Implement source config and trigger config fixtures before live scheduling.
 - Implement manual opportunity input first.
+- Implement Gemini managed-agent research for public web/repo discovery.
 - Add one public signal source only after manual fixtures work.
 - Normalize records into `signals`.
 - Combine `user_preferences` and `preference_events` into a scoring context.
@@ -54,6 +55,7 @@ Good first source options:
 Exit criteria:
 
 - One command ranks fixture opportunities for a sample profile.
+- One command runs managed-agent research in dry-run mode and extracts structured signals/opportunities.
 - Approvals and rejections create `preference_events`.
 - Ranking changes when preference events change.
 - A product review can be generated from stored opportunities and evaluations.
