@@ -676,13 +676,14 @@ Implemented now:
 - Opportunity clustering.
 - Bull/Bear/Decision/Synthesizer managed-agent evaluation.
 - Supabase writes to existing ingestion/evaluation tables.
+- Dashboard API routes under `forge_managed_research.api`.
+- Project, schedule, run, action, and build migration in `supabase/migrations/0002_dashboard_contract.sql`.
 
 Not implemented yet:
 
-- Dashboard API routes.
-- Project tables.
+- Applied remote dashboard migration, unless a developer has run `0002_dashboard_contract.sql` in Supabase.
 - Schedule runner.
-- Antigravity builder adapter for project repo PRs.
+- Antigravity builder adapter for project repo PRs. The API currently stores the build prompt context and marks the build record complete.
 - Realtime dashboard subscriptions.
 
 Build the frontend against this contract while backend fills those missing pieces.

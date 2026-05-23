@@ -65,10 +65,30 @@ class SupabaseWriter:
             body = exc.read().decode("utf-8", errors="replace")
             raise RuntimeError(f"Supabase select failed for {table}: HTTP {exc.code} {body}") from exc
 
+    def update(self, table: str, query: str, values: dict[str, Any]) -> list[dict[str, Any]]:
+        request = Request(
+            f"{self.url}/rest/v1/{table}?{query}",
+            data=json.dumps(values).encode("utf-8"),
+            method="PATCH",
+            headers={
+                "Content-Type": "application/json",
+                "Prefer": "return=representation",
+                "apikey": self.key,
+                "Authorization": f"Bearer {self.key}",
+            },
+        )
+        try:
+            with urlopen(request, timeout=30) as response:
+                result = json.loads(response.read().decode("utf-8"))
+                return result if isinstance(result, list) else [result]
+        except HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"Supabase update failed for {table}: HTTP {exc.code} {body}") from exc
+
     def fetch_opportunity_records(self, limit: int = 100) -> tuple[list[OpportunityRecord], dict[str, SignalRecord]]:
         opportunity_rows = self.select(
             "opportunities",
-            "select=id,title,problem,target_user,mvp_concept,score,score_rationale,pipeline_run_id,profile"
+            "select=id,title,problem,target_user,mvp_concept,score,score_rationale,pipeline_run_id,project_id,profile"
             f"&order=score.desc&limit={max(1, limit)}",
         )
         opportunities = [
@@ -116,47 +136,59 @@ class SupabaseWriter:
             opportunity.evidence_count = len(opportunity.evidence_signal_ids)
         return opportunities, signals_by_id
 
-    def save_opportunity_clusters(self, clusters: list[OpportunityCluster]) -> dict[str, Any]:
+    def save_opportunity_clusters(
+        self,
+        clusters: list[OpportunityCluster],
+        project_id: str | None = None,
+    ) -> dict[str, Any]:
+        run_row: dict[str, Any] = {
+            "run_type": "managed",
+            "status": "completed",
+            "trigger": "managed_agent",
+            "metadata": {
+                "pipeline": "opportunity_clustering",
+                "cluster_count": len(clusters),
+                "clusters": [cluster.to_metadata() for cluster in clusters],
+            },
+        }
+        if project_id:
+            run_row["project_id"] = project_id
+            run_row["metadata"]["project_id"] = project_id
         run = self.insert(
             "pipeline_runs",
-            [
-                {
-                    "run_type": "managed",
-                    "status": "completed",
-                    "trigger": "managed_agent",
-                    "metadata": {
-                        "pipeline": "opportunity_clustering",
-                        "cluster_count": len(clusters),
-                        "clusters": [cluster.to_metadata() for cluster in clusters],
-                    },
-                }
-            ],
+            [run_row],
         )[0]
         return {
             "pipeline_run_id": run["id"],
             "clusters_saved_in_run_metadata": len(clusters),
         }
 
-    def save_bull_bear_evaluation(self, result: BullBearEvaluation) -> dict[str, Any]:
+    def save_bull_bear_evaluation(
+        self,
+        result: BullBearEvaluation,
+        project_id: str | None = None,
+    ) -> dict[str, Any]:
         cluster_metadata = result.cluster.to_metadata()
+        run_row: dict[str, Any] = {
+            "run_type": "managed",
+            "status": "completed",
+            "trigger": "managed_agent",
+            "metadata": {
+                "pipeline": "bull_bear_evaluation",
+                "cluster": cluster_metadata,
+                "evaluators": ["bull_agent", "bear_agent", "decision_agent", "synthesizer_agent"],
+                "raw_output_chars": {
+                    name: len(text)
+                    for name, text in result.raw_outputs.items()
+                },
+            },
+        }
+        if project_id:
+            run_row["project_id"] = project_id
+            run_row["metadata"]["project_id"] = project_id
         run = self.insert(
             "pipeline_runs",
-            [
-                {
-                    "run_type": "managed",
-                    "status": "completed",
-                    "trigger": "managed_agent",
-                    "metadata": {
-                        "pipeline": "bull_bear_evaluation",
-                        "cluster": cluster_metadata,
-                        "evaluators": ["bull_agent", "bear_agent", "decision_agent", "synthesizer_agent"],
-                        "raw_output_chars": {
-                            name: len(text)
-                            for name, text in result.raw_outputs.items()
-                        },
-                    },
-                }
-            ],
+            [run_row],
         )[0]
         rows = []
         for evaluator, content in [
@@ -175,6 +207,7 @@ class SupabaseWriter:
                         "cluster_run_id": run["id"],
                         "canonical_title": result.cluster.canonical_title,
                         "merged_opportunity_ids": result.cluster.merged_opportunity_ids,
+                        "payload": content,
                     },
                 }
             )
@@ -374,57 +407,66 @@ class SupabaseWriter:
             "seed_topics_saved_in_run_metadata": len(result.seed_topics),
         }
 
-    def save_source_collection(self, result: SourceCollectionResult) -> dict[str, Any]:
+    def save_source_collection(self, result: SourceCollectionResult, project_id: str | None = None) -> dict[str, Any]:
+        run_row: dict[str, Any] = {
+            "run_type": "managed",
+            "status": "completed",
+            "trigger": "remote",
+            "metadata": {
+                "pipeline": "source_collect",
+                "query": result.query,
+                "collector": result.collector,
+                "media_item_count": len(result.media_items),
+                "seed_topic_count": len(result.seed_topics),
+                "signal_count": len(result.signals),
+                "opportunity_count": len(result.opportunities),
+                "media_items": [
+                    item.to_metadata()
+                    for item in result.media_items
+                ],
+                "seed_topics": [
+                    topic.to_metadata()
+                    for topic in result.seed_topics
+                ],
+            },
+        }
+        if project_id:
+            run_row["project_id"] = project_id
+            run_row["metadata"]["project_id"] = project_id
         run = self.insert(
             "pipeline_runs",
-            [
-                {
-                    "run_type": "managed",
-                    "status": "completed",
-                    "trigger": "remote",
-                    "metadata": {
-                        "pipeline": "source_collect",
-                        "query": result.query,
-                        "collector": result.collector,
-                        "media_item_count": len(result.media_items),
-                        "seed_topic_count": len(result.seed_topics),
-                        "signal_count": len(result.signals),
-                        "opportunity_count": len(result.opportunities),
-                        "media_items": [
-                            item.to_metadata()
-                            for item in result.media_items
-                        ],
-                        "seed_topics": [
-                            topic.to_metadata()
-                            for topic in result.seed_topics
-                        ],
-                    },
-                }
-            ],
+            [run_row],
         )[0]
         run_id = run["id"]
 
+        signal_rows_to_insert = []
+        for signal in result.signals:
+            row = {
+                **signal.to_supabase_row(),
+                "metadata": {
+                    **signal.metadata,
+                    "pipeline": "source_collect",
+                    "pipeline_run_id": run_id,
+                    "collector": result.collector,
+                },
+            }
+            if project_id:
+                row["project_id"] = project_id
+                row["metadata"]["project_id"] = project_id
+            signal_rows_to_insert.append(row)
         signal_rows = self.insert(
             "signals",
-            [
-                {
-                    **signal.to_supabase_row(),
-                    "metadata": {
-                        **signal.metadata,
-                        "pipeline": "source_collect",
-                        "pipeline_run_id": run_id,
-                        "collector": result.collector,
-                    },
-                }
-                for signal in result.signals
-            ],
+            signal_rows_to_insert,
         )
+        opportunity_rows_to_insert = []
+        for opportunity in result.opportunities:
+            row = opportunity.to_supabase_row(pipeline_run_id=run_id)
+            if project_id:
+                row["project_id"] = project_id
+            opportunity_rows_to_insert.append(row)
         opportunity_rows = self.insert(
             "opportunities",
-            [
-                opportunity.to_supabase_row(pipeline_run_id=run_id)
-                for opportunity in result.opportunities
-            ],
+            opportunity_rows_to_insert,
         )
 
         evidence_rows: list[dict[str, Any]] = []

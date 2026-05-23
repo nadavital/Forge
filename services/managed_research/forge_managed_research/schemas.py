@@ -338,6 +338,7 @@ class OpportunityRecord:
     score: float
     score_rationale: str
     pipeline_run_id: str | None = None
+    project_id: str | None = None
     evidence_signal_ids: list[str] = field(default_factory=list)
     evidence_count: int = 0
     profile: dict[str, Any] = field(default_factory=dict)
@@ -358,6 +359,7 @@ class OpportunityRecord:
             score=score,
             score_rationale=str(value.get("score_rationale") or ""),
             pipeline_run_id=value.get("pipeline_run_id") or None,
+            project_id=value.get("project_id") or None,
             profile=value.get("profile") if isinstance(value.get("profile"), dict) else {},
         )
 
