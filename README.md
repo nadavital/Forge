@@ -65,6 +65,7 @@ flowchart LR
 - [Execution Plan](./PLAN.md)
 - [Architecture](./docs/ARCHITECTURE.md)
 - [Data Model](./docs/DATA_MODEL.md)
+- [Frontend Backend Contract](./docs/FRONTEND_BACKEND_CONTRACT.md)
 - [Managed Trend Research Goal](./docs/MANAGED_TREND_RESEARCH_GOAL.md)
 - [Prompt Contracts](./docs/prompts/AGENT_PROMPTS.md)
 - [Open Questions](./docs/OPEN_QUESTIONS.md)
