@@ -11,12 +11,14 @@ from test_extract import (  # noqa: E402
     test_extract_json_payload_from_fenced_block,
     test_extract_json_payload_returns_empty_contract_when_missing,
 )
+from test_trend_research import test_trend_research_pipeline_result_from_payloads  # noqa: E402
 from forge_managed_research.env import load_env_file  # noqa: E402
 
 
 def main() -> None:
     test_extract_json_payload_from_fenced_block()
     test_extract_json_payload_returns_empty_contract_when_missing()
+    test_trend_research_pipeline_result_from_payloads()
     load_env_file(Path("/tmp/forge-managed-research-missing.env"))
     print("stdlib tests passed")
 

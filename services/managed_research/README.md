@@ -22,10 +22,34 @@ GITHUB_TOKEN=
 
 ## Dry Run
 
+Single-stage research:
+
 ```bash
 python -m forge_managed_research.ingest \
   --topic "developer pain with AI agent deployment" \
   --agent antigravity \
+  --dry-run
+```
+
+Two-stage trend-to-research pipeline:
+
+```bash
+python -m forge_managed_research.ingest \
+  --pipeline trend-research \
+  --topic "developer pain deploying AI agents to production" \
+  --trend-agent antigravity \
+  --research-agent antigravity \
+  --dry-run
+```
+
+Fixture-only validation:
+
+```bash
+python -m forge_managed_research.ingest \
+  --pipeline trend-research \
+  --topic "fixture auth check" \
+  --trend-input-file tests/fixtures/trend_output.md \
+  --research-input-file tests/fixtures/research_output.md \
   --dry-run
 ```
 
@@ -46,10 +70,20 @@ python -m forge_managed_research.ingest \
   --save
 ```
 
+The trend-to-research pipeline stores retrieved media content and research findings in `pipeline_runs.metadata`, then stores normalized research-derived rows in `signals`, `opportunities`, `opportunity_signals`, and `opportunity_evaluations`.
+
+```bash
+python -m forge_managed_research.ingest \
+  --pipeline trend-research \
+  --topic "developer pain deploying AI agents to production" \
+  --trend-agent antigravity \
+  --research-agent antigravity \
+  --save
+```
+
 ## Honest Limits
 
 - Deep Research is best for cited reports, not guaranteed clean database rows.
 - Antigravity is best for browsing, repo inspection, code execution, and file artifacts.
 - Antigravity currently does not guarantee structured output, so Forge validates extracted JSON before saving.
 - Source/API limits still apply. Use `GITHUB_TOKEN` for GitHub. Add source-specific auth when a public source becomes limiting.
-

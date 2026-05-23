@@ -114,3 +114,134 @@ class ManagedResearchResult:
         ]
         return cls(raw_text=raw_text, signals=signals, opportunities=opportunities, agent=agent)
 
+
+@dataclass
+class MediaItem:
+    source: str
+    title: str
+    url: str | None = None
+    summary: str = ""
+    captured_text: str = ""
+    published_at: str | None = None
+    tags: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> "MediaItem":
+        return cls(
+            source=str(value.get("source") or "managed_media"),
+            title=str(value.get("title") or "Untitled media item"),
+            url=value.get("url") or None,
+            summary=str(value.get("summary") or value.get("body") or ""),
+            captured_text=str(value.get("captured_text") or value.get("text") or ""),
+            published_at=value.get("published_at") or None,
+            tags=[str(item) for item in value.get("tags", []) if item],
+            metadata=value.get("metadata") if isinstance(value.get("metadata"), dict) else {},
+        )
+
+    def to_metadata(self) -> dict[str, Any]:
+        return {
+            "source": self.source,
+            "title": self.title,
+            "url": self.url,
+            "summary": self.summary,
+            "captured_text": self.captured_text,
+            "published_at": self.published_at,
+            "tags": self.tags,
+            "metadata": self.metadata,
+        }
+
+
+@dataclass
+class TrendScoutResult:
+    raw_text: str
+    media_items: list[MediaItem]
+    agent: str
+
+    @classmethod
+    def from_payload(cls, payload: dict[str, Any], raw_text: str, agent: str) -> "TrendScoutResult":
+        media_items = [
+            MediaItem.from_dict(item)
+            for item in payload.get("media_items", [])
+            if isinstance(item, dict)
+        ]
+        return cls(raw_text=raw_text, media_items=media_items, agent=agent)
+
+
+@dataclass
+class ResearchFinding:
+    title: str
+    summary: str
+    citations: list[str] = field(default_factory=list)
+    media_item_indexes: list[int] = field(default_factory=list)
+    observed_pain: str = ""
+    inference: str = ""
+    risk: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> "ResearchFinding":
+        return cls(
+            title=str(value.get("title") or "Untitled research finding"),
+            summary=str(value.get("summary") or value.get("body") or ""),
+            citations=[str(item) for item in value.get("citations", []) if item],
+            media_item_indexes=[
+                int(item)
+                for item in value.get("media_item_indexes", [])
+                if isinstance(item, int) or str(item).isdigit()
+            ],
+            observed_pain=str(value.get("observed_pain") or ""),
+            inference=str(value.get("inference") or ""),
+            risk=str(value.get("risk") or ""),
+            metadata=value.get("metadata") if isinstance(value.get("metadata"), dict) else {},
+        )
+
+    def to_metadata(self) -> dict[str, Any]:
+        return {
+            "title": self.title,
+            "summary": self.summary,
+            "citations": self.citations,
+            "media_item_indexes": self.media_item_indexes,
+            "observed_pain": self.observed_pain,
+            "inference": self.inference,
+            "risk": self.risk,
+            "metadata": self.metadata,
+        }
+
+
+@dataclass
+class TrendResearchPipelineResult:
+    topic: str
+    trend: TrendScoutResult
+    research: ManagedResearchResult
+    research_findings: list[ResearchFinding]
+
+    @classmethod
+    def from_payloads(
+        cls,
+        topic: str,
+        trend_payload: dict[str, Any],
+        trend_raw_text: str,
+        trend_agent: str,
+        research_payload: dict[str, Any],
+        research_raw_text: str,
+        research_agent: str,
+    ) -> "TrendResearchPipelineResult":
+        return cls(
+            topic=topic,
+            trend=TrendScoutResult.from_payload(
+                trend_payload,
+                raw_text=trend_raw_text,
+                agent=trend_agent,
+            ),
+            research=ManagedResearchResult.from_payload(
+                research_payload,
+                raw_text=research_raw_text,
+                agent=research_agent,
+            ),
+            research_findings=[
+                ResearchFinding.from_dict(item)
+                for item in research_payload.get("research_findings", [])
+                if isinstance(item, dict)
+            ],
+        )
