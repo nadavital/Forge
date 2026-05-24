@@ -32,57 +32,62 @@ export default async function HomePage() {
         </Link>
       </header>
 
-      <section aria-label="Workspace summary" className="overview-strip">
-        <div>
-          <strong>{projects.length}</strong>
-          <span>{plural(projects.length, "project")}</span>
-        </div>
-        <div>
-          <strong>{totalOpportunities}</strong>
-          <span>{plural(totalOpportunities, "opportunity", "opportunities")}</span>
-        </div>
-        <div>
-          <strong>{activeBuilds}</strong>
-          <span>{plural(activeBuilds, "active build")}</span>
-        </div>
-      </section>
-
-      <SchedulerControl overview={scheduler} />
-
       {projects.length === 0 ? (
-        <section className="empty-panel">
+        <section className="empty-panel empty-panel-primary">
           <h2>No projects yet</h2>
-          <p>Add an existing GitHub repo or start a new product idea to create real project records.</p>
+          <p>
+            Start with an existing GitHub repo or a new product idea. If you leave GitHub blank, Forge will create a
+            generated repo later when you approve a build.
+          </p>
           <Link className="btn btn-primary" href="/projects/new">
             <Plus aria-hidden="true" />
             Create project
           </Link>
         </section>
       ) : (
-        <section aria-labelledby="projects-heading" className="project-overview">
-          <div className="section-head">
-            <h2 id="projects-heading">All projects</h2>
-          </div>
-          <div className="project-overview-list">
-            {projects.map((project) => {
-              const topOpportunity = project.opportunities[0];
+        <>
+          <section aria-label="Workspace summary" className="overview-strip">
+            <div>
+              <strong>{projects.length}</strong>
+              <span>{plural(projects.length, "project")}</span>
+            </div>
+            <div>
+              <strong>{totalOpportunities}</strong>
+              <span>{plural(totalOpportunities, "opportunity", "opportunities")}</span>
+            </div>
+            <div>
+              <strong>{activeBuilds}</strong>
+              <span>{plural(activeBuilds, "active build")}</span>
+            </div>
+          </section>
 
-              return (
-                <Link className="project-overview-row" href={`/projects/${project.id}`} key={project.id}>
-                  <div>
-                    <h3>{project.name}</h3>
-                    <p>{topOpportunity?.title ?? "No opportunities recorded yet."}</p>
-                  </div>
-                  <div className="project-overview-meta">
-                    <span>{project.mode}</span>
-                    <span>{plural(project.opportunities.length, "opportunity", "opportunities")}</span>
-                    <ArrowUpRight aria-hidden="true" />
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
-        </section>
+          <SchedulerControl overview={scheduler} />
+
+          <section aria-labelledby="projects-heading" className="project-overview">
+            <div className="section-head">
+              <h2 id="projects-heading">All projects</h2>
+            </div>
+            <div className="project-overview-list">
+              {projects.map((project) => {
+                const topOpportunity = project.opportunities[0];
+
+                return (
+                  <Link className="project-overview-row" href={`/projects/${project.id}`} key={project.id}>
+                    <div>
+                      <h3>{project.name}</h3>
+                      <p>{topOpportunity?.title ?? "No opportunities recorded yet."}</p>
+                    </div>
+                    <div className="project-overview-meta">
+                      <span>{project.mode}</span>
+                      <span>{plural(project.opportunities.length, "opportunity", "opportunities")}</span>
+                      <ArrowUpRight aria-hidden="true" />
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </section>
+        </>
       )}
     </main>
   );
