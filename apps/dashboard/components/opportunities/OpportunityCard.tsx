@@ -22,7 +22,7 @@ export function OpportunityCard({ opportunity, projectId }: OpportunityCardProps
         <h2 className="card-title">
           <Link href={href}>{opportunity.title}</Link>
         </h2>
-        <p className="card-summary">{opportunity.decision.summary}</p>
+        <p className="card-summary">{opportunity.problem || opportunity.decision.summary}</p>
       </div>
 
       <footer className="card-foot">
