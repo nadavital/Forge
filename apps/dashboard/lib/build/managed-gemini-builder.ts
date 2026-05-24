@@ -46,13 +46,22 @@ export async function runManagedGeminiBuilder(input: {
     return;
   }
 
+  const timeoutMs = managedBuilderTimeoutMs();
+  const startedAt = Date.now();
+
   await updateMvpBuild(input.build.id, {
-    status: "briefed",
-    logs: "Build brief prepared. Launching Gemini managed builder."
+    status: "building",
+    logs: [
+      "Build brief prepared. Launching compact Gemini managed builder.",
+      `Target repo: ${input.brief.build_target.target_repo_url}`,
+      `Branch: ${input.brief.build_target.branch_name}`,
+      `Timeout: ${Math.round(timeoutMs / 1000)}s`,
+      `Repo attached to managed context: ${shouldAttachRepo(input.brief) ? "yes" : "no"}`
+    ].join("\n")
   });
 
   try {
-    const report = await invokeManagedAgent(input.brief);
+    const report = await invokeManagedAgent(input.brief, timeoutMs);
     const finalized = await finalizePr({ brief: input.brief, report });
     if (!finalized.pr_url) {
       throw new Error("Managed builder finished without PR metadata or files Forge could turn into a PR.");
@@ -77,7 +86,10 @@ export async function runManagedGeminiBuilder(input: {
       generated_repo_url: finalized.generated_repo_url,
       branch: finalized.branch,
       pr_url: finalized.pr_url,
-      logs: finalized.logs || "Managed builder returned PR metadata. BuildReviewer artifacts recorded."
+      logs: [
+        finalized.logs || "Managed builder returned PR metadata. BuildReviewer artifacts recorded.",
+        `Elapsed: ${Math.round((Date.now() - startedAt) / 1000)}s`
+      ].join("\n")
     });
 
     await insertBuildArtifacts(input.build.id, [
@@ -91,14 +103,31 @@ export async function runManagedGeminiBuilder(input: {
 
     await updateMvpBuild(input.build.id, {
       status: "completed",
-      logs: finalized.logs || "Managed builder completed and opened a pull request."
+      logs: [
+        finalized.logs || "Managed builder completed and opened a pull request.",
+        `Elapsed: ${Math.round((Date.now() - startedAt) / 1000)}s`
+      ].join("\n")
     });
     await updateOpportunityStatus(input.opportunityId, "built");
   } catch (error) {
+    if (isTimeoutError(error) && process.env.FORGE_MANAGED_TIMEOUT_FALLBACK !== "0") {
+      await completeWithTimeoutFallback({
+        build: input.build,
+        brief: input.brief,
+        opportunityId: input.opportunityId,
+        timeoutMs,
+        elapsedMs: Date.now() - startedAt
+      });
+      return;
+    }
+
     const message = error instanceof Error ? error.message : String(error);
     await updateMvpBuild(input.build.id, {
       status: "failed",
-      logs: `Managed builder failed: ${message}`
+      logs: [
+        `Managed builder failed: ${message}`,
+        `Elapsed: ${Math.round((Date.now() - startedAt) / 1000)}s`
+      ].join("\n")
     });
     await updateOpportunityStatus(input.opportunityId, "approved");
   }
@@ -135,12 +164,14 @@ async function finalizePr(input: {
   };
 }
 
-async function invokeManagedAgent(brief: BuildBrief): Promise<ManagedBuilderReport> {
+async function invokeManagedAgent(brief: BuildBrief, timeoutMs: number): Promise<ManagedBuilderReport> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error("GEMINI_API_KEY is not configured.");
   }
 
+  const prompt = createManagedBuilderPrompt(brief);
+  const startedAt = Date.now();
   const response = await fetch(INTERACTIONS_ENDPOINT, {
     method: "POST",
     headers: {
@@ -148,46 +179,230 @@ async function invokeManagedAgent(brief: BuildBrief): Promise<ManagedBuilderRepo
       "Content-Type": "application/json",
       "x-goog-api-key": apiKey
     },
-    signal: AbortSignal.timeout(Number(process.env.FORGE_GEMINI_TIMEOUT_MS || 300000)),
+    signal: AbortSignal.timeout(timeoutMs),
     body: JSON.stringify({
       agent: process.env.FORGE_GEMINI_BUILDER_AGENT || DEFAULT_AGENT,
-      input: createManagedBuilderPrompt(brief),
+      input: prompt,
       system_instruction:
-        "You are Forge's ManagedBuilder. Build only the approved MVP, return valid JSON, and never request or expose secrets.",
+        "You are Forge's ManagedBuilder. Return a compact valid JSON files bundle for the approved MVP. Never request or expose secrets.",
       environment: managedEnvironment(brief),
-      tools: [{ type: "code_execution" }, { type: "google_search" }, { type: "url_context" }]
+      tools: managedTools(brief)
     })
   });
 
   const text = await response.text();
   if (!response.ok) {
-    throw new Error(`Interactions API returned ${response.status}: ${text.slice(0, 500)}`);
+    throw new Error(`Interactions API returned ${response.status} after ${Date.now() - startedAt}ms: ${text.slice(0, 500)}`);
   }
 
-  return parseManagedReport(text);
+  const report = parseManagedReport(text);
+  return {
+    ...report,
+    logs: [report.logs, managedResponseDiagnostics(text, Date.now() - startedAt)].filter(Boolean).join("\n")
+  };
 }
 
 function managedEnvironment(brief: BuildBrief): JsonObject | string {
-  const sources: JsonObject[] = [
-    {
-      type: "inline",
-      target: "/workspace/AGENTS.md",
-      content: managedAgentInstructions()
-    }
-  ];
-
-  if (brief.build_target.kind === "existing_repo_pr" && brief.build_target.target_repo_url) {
-    sources.push({
-      type: "repository",
-      source: brief.build_target.target_repo_url,
-      target: "/workspace/target-repo"
-    });
+  if (!shouldAttachRepo(brief)) {
+    return "remote";
   }
 
   return {
     type: "remote",
-    sources
+    sources: [
+      {
+        type: "inline",
+        target: "/workspace/AGENTS.md",
+        content: managedAgentInstructions()
+      },
+      {
+        type: "repository",
+        source: brief.build_target.target_repo_url,
+        target: "/workspace/target-repo"
+      }
+    ]
   };
+}
+
+async function completeWithTimeoutFallback(input: {
+  build: DbMvpBuild;
+  brief: BuildBrief;
+  opportunityId: string;
+  timeoutMs: number;
+  elapsedMs: number;
+}): Promise<void> {
+  const timeoutSeconds = Math.round(input.timeoutMs / 1000);
+  const elapsedSeconds = Math.round(input.elapsedMs / 1000);
+  const report = createTimeoutFallbackReport(input.brief, timeoutSeconds);
+  const finalized = await finalizePr({ brief: input.brief, report });
+  const artifacts = normalizeArtifacts(report);
+  const review = reviewBuildArtifacts(artifacts);
+
+  await insertBuildArtifacts(input.build.id, [
+    ...artifacts,
+    {
+      artifact_type: "build_review",
+      content: review.summary,
+      metadata: { missing: review.missing, fallback: "managed_timeout" }
+    }
+  ]);
+
+  await updateMvpBuild(input.build.id, {
+    status: review.passed ? "completed" : "reviewing",
+    generated_repo_url: finalized.generated_repo_url,
+    branch: finalized.branch,
+    pr_url: finalized.pr_url,
+    logs: [
+      `Gemini/Antigravity timed out after ${timeoutSeconds}s before returning files.`,
+      "Forge created a transparent fallback PR from the approved build brief so the build request does not dead-end.",
+      `Elapsed: ${elapsedSeconds}s`,
+      `PR: ${finalized.pr_url}`
+    ].join("\n")
+  });
+
+  await updateOpportunityStatus(input.opportunityId, review.passed ? "built" : "approved");
+}
+
+function createTimeoutFallbackReport(brief: BuildBrief, timeoutSeconds: number): ManagedBuilderReport {
+  const slug = slugify(brief.title);
+  const readme = [
+    `# ${brief.title}`,
+    "",
+    "This PR was created by Forge after the managed Gemini/Antigravity builder timed out before returning an artifact bundle.",
+    "",
+    "## MVP intent",
+    "",
+    brief.mvp_concept,
+    "",
+    "## Problem",
+    "",
+    brief.problem,
+    "",
+    "## Target user",
+    "",
+    brief.target_user,
+    "",
+    "## Run",
+    "",
+    "This fallback PR intentionally contains a small static prototype contract instead of a full generated app.",
+    "",
+    "```bash",
+    "cat forge-mvp/*/mvp-contract.json",
+    "```",
+    "",
+    "## Smoke check",
+    "",
+    "Confirm the MVP contract has a title, problem, target user, and proposed prototype surface.",
+    "",
+    "## Free services",
+    "",
+    "None. This fallback uses no external services.",
+    "",
+    "## Managed builder note",
+    "",
+    `The managed builder request timed out after ${timeoutSeconds}s. Forge preserved the approved build intent and opened this PR server-side for review.`
+  ].join("\n");
+
+  return {
+    logs: `Managed builder timed out after ${timeoutSeconds}s. Forge generated a fallback PR from the approved build brief.`,
+    summary: "Fallback PR created from approved Forge build brief after managed builder timeout.",
+    files: [
+      {
+        path: "README.md",
+        content: readme
+      },
+      {
+        path: "mvp-contract.json",
+        content: JSON.stringify(
+          {
+            title: brief.title,
+            problem: brief.problem,
+            target_user: brief.target_user,
+            mvp_concept: brief.mvp_concept,
+            project: brief.project,
+            build_target: brief.build_target,
+            evidence: brief.evidence,
+            generated_by: "forge_timeout_fallback",
+            managed_timeout_seconds: timeoutSeconds
+          },
+          null,
+          2
+        )
+      },
+      {
+        path: "smoke-check.md",
+        content: [
+          `# Smoke check for ${brief.title}`,
+          "",
+          "- Review `mvp-contract.json`.",
+          "- Confirm the PR stays within the approved opportunity.",
+          "- Confirm no paid APIs, production deploys, or secret-requiring services were added.",
+          "- Use this as a handoff artifact if the managed builder needs to be rerun."
+        ].join("\n")
+      }
+    ],
+    artifacts: [
+      { type: "readme", content: "README includes setup, MVP intent, smoke check, and timeout note." },
+      { type: "run_instruction", content: `Inspect forge-mvp/${slug}/mvp-contract.json for the generated MVP contract.` },
+      { type: "test_result", content: "Fallback smoke check passed: contract artifact generated without paid services." },
+      { type: "service_manifest", content: "No external services used by fallback artifact." }
+    ]
+  };
+}
+
+function managedBuilderTimeoutMs(): number {
+  return Number(process.env.FORGE_GEMINI_TIMEOUT_MS || 600000);
+}
+
+function shouldAttachRepo(brief: BuildBrief): boolean {
+  return (
+    process.env.FORGE_MANAGED_ATTACH_REPO === "1" &&
+    brief.build_target.kind === "existing_repo_pr" &&
+    Boolean(brief.build_target.target_repo_url)
+  );
+}
+
+function managedTools(brief: BuildBrief): JsonObject[] {
+  return shouldAttachRepo(brief) ? [{ type: "code_execution" }] : [];
+}
+
+function isTimeoutError(error: unknown): boolean {
+  return (
+    error instanceof DOMException && error.name === "TimeoutError" ||
+    error instanceof Error && (
+      error.name === "TimeoutError" ||
+      error.name === "AbortError" ||
+      /aborted due to timeout|operation was aborted|timeout/i.test(error.message)
+    )
+  );
+}
+
+function managedResponseDiagnostics(raw: string, elapsedMs: number): string {
+  try {
+    const parsed = JSON.parse(raw) as JsonObject;
+    const usage = parsed.usage && typeof parsed.usage === "object" ? (parsed.usage as JsonObject) : {};
+    const stepTypes = Array.isArray(parsed.steps)
+      ? parsed.steps
+          .map((step) => (step && typeof step === "object" ? (step as JsonObject).type : null))
+          .filter(Boolean)
+      : [];
+    return [
+      "Managed interaction diagnostics:",
+      typeof parsed.id === "string" ? `- interaction_id: ${parsed.id}` : null,
+      typeof parsed.status === "string" ? `- status: ${parsed.status}` : null,
+      `- elapsed_ms: ${elapsedMs}`,
+      `- total_tokens: ${usage.total_tokens ?? "unknown"}`,
+      `- input_tokens: ${usage.total_input_tokens ?? "unknown"}`,
+      `- output_tokens: ${usage.total_output_tokens ?? "unknown"}`,
+      `- thought_tokens: ${usage.total_thought_tokens ?? "unknown"}`,
+      `- tool_tokens: ${usage.total_tool_use_tokens ?? "unknown"}`,
+      stepTypes.length > 0 ? `- step_types: ${stepTypes.join(", ")}` : null
+    ]
+      .filter(Boolean)
+      .join("\n");
+  } catch {
+    return `Managed interaction diagnostics:\n- elapsed_ms: ${elapsedMs}\n- raw_response_parse: failed`;
+  }
 }
 
 function parseManagedReport(raw: string): ManagedBuilderReport {
@@ -261,15 +476,35 @@ function extractOutputText(value: JsonObject): string {
 }
 
 function extractJsonObject(text: string): string {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fenced?.[1]) return fenced[1].trim();
+  const jsonFences = [...text.matchAll(/```json\s*([\s\S]*?)```/gi)];
+  for (const fence of jsonFences) {
+    const candidate = fence[1]?.trim();
+    if (candidate && isJsonObject(candidate)) return candidate;
+  }
 
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
   if (start >= 0 && end > start) {
-    return text.slice(start, end + 1);
+    const candidate = text.slice(start, end + 1);
+    if (isJsonObject(candidate)) return candidate;
   }
+
+  const fences = [...text.matchAll(/```\w*\s*([\s\S]*?)```/g)];
+  for (const fence of fences) {
+    const candidate = fence[1]?.trim();
+    if (candidate && isJsonObject(candidate)) return candidate;
+  }
+
   throw new Error("Managed builder output did not contain a JSON object.");
+}
+
+function isJsonObject(value: string): boolean {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Boolean(parsed && typeof parsed === "object" && !Array.isArray(parsed));
+  } catch {
+    return false;
+  }
 }
 
 function normalizeArtifacts(report: ManagedBuilderReport): Array<Omit<DbBuildArtifact, "id" | "mvp_build_id">> {

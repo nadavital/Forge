@@ -5,18 +5,24 @@ from __future__ import annotations
 import time
 from pathlib import Path
 from typing import Any
+import json
+import socket
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from .schemas import MediaItem, OpportunityCluster
 
 DEFAULT_ANTIGRAVITY_AGENT = "antigravity-preview-05-2026"
 DEFAULT_DEEP_RESEARCH_AGENT = "deep-research-preview-04-2026"
 API_REVISION = "2026-05-20"
+INTERACTIONS_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/interactions"
 
 
 class ManagedAgentClient:
     def __init__(self, api_key: str | None = None) -> None:
         from google import genai
 
+        self.api_key = api_key
         self.client = genai.Client(api_key=api_key)
 
     def run_antigravity(
@@ -38,12 +44,12 @@ class ManagedAgentClient:
         agents_dir: Path,
         system_instruction: str,
         timeout_seconds: int = 300,
+        tools: list[dict[str, str]] | None = None,
+        mount_agent_files: bool = False,
     ) -> str:
-        interaction = self.client.interactions.create(
-            agent=DEFAULT_ANTIGRAVITY_AGENT,
-            input=prompt,
-            system_instruction=system_instruction,
-            environment={
+        environment: str | dict[str, Any] = "remote"
+        if mount_agent_files:
+            environment = {
                 "type": "remote",
                 "sources": [
                     {
@@ -59,14 +65,21 @@ class ManagedAgentClient:
                         ).read_text(),
                     },
                 ],
+            }
+
+        return self._create_interaction_rest(
+            {
+                "agent": DEFAULT_ANTIGRAVITY_AGENT,
+                "input": prompt,
+                "system_instruction": system_instruction,
+                "environment": environment,
+                "tools": tools if tools is not None else [
+                    {"type": "google_search"},
+                    {"type": "url_context"},
+                ],
             },
-            tools=[
-                {"type": "google_search"},
-                {"type": "url_context"},
-                {"type": "code_execution"},
-            ],
+            timeout_seconds=timeout_seconds,
         )
-        return getattr(interaction, "output_text", "") or str(interaction)
 
     def run_trend_scout(
         self,
@@ -79,6 +92,10 @@ class ManagedAgentClient:
             agents_dir=agents_dir,
             system_instruction="You are Forge's TrendScout managed media agent. Return retrieved evidence, not conclusions.",
             timeout_seconds=timeout_seconds,
+            tools=[
+                {"type": "google_search"},
+                {"type": "url_context"},
+            ],
         )
 
     def run_topic_seeder(
@@ -93,6 +110,10 @@ class ManagedAgentClient:
             agents_dir=agents_dir,
             system_instruction="You are Forge's TopicSeeder managed trend agent. Discover promising research topics from public evidence.",
             timeout_seconds=timeout_seconds,
+            tools=[
+                {"type": "google_search"},
+                {"type": "url_context"},
+            ],
         )
 
     def run_research_analyst(
@@ -111,7 +132,8 @@ class ManagedAgentClient:
                 prompt=prompt,
                 agents_dir=agents_dir,
                 system_instruction="You are Forge's ResearchAnalyst managed agent. Research only the provided TrendScout evidence.",
-                timeout_seconds=min(timeout_seconds, 300),
+                timeout_seconds=min(timeout_seconds, 90),
+                tools=[],
             )
         raise ValueError(f"Unsupported research agent: {agent}")
 
@@ -125,7 +147,8 @@ class ManagedAgentClient:
             prompt=_bull_agent_prompt(cluster),
             agents_dir=agents_dir,
             system_instruction="You are Forge's BullAgent. Argue the strongest credible case for this product direction.",
-            timeout_seconds=timeout_seconds,
+            timeout_seconds=min(timeout_seconds, 60),
+            tools=[],
         )
 
     def run_bear_agent(
@@ -138,7 +161,8 @@ class ManagedAgentClient:
             prompt=_bear_agent_prompt(cluster),
             agents_dir=agents_dir,
             system_instruction="You are Forge's BearAgent. Challenge feasibility, demand, evidence quality, and MVP scope.",
-            timeout_seconds=timeout_seconds,
+            timeout_seconds=min(timeout_seconds, 60),
+            tools=[],
         )
 
     def run_decision_agent(
@@ -153,7 +177,8 @@ class ManagedAgentClient:
             prompt=_decision_agent_prompt(cluster, bull, bear),
             agents_dir=agents_dir,
             system_instruction="You are Forge's DecisionAgent. Recommend the next action from the evidence and debate.",
-            timeout_seconds=timeout_seconds,
+            timeout_seconds=min(timeout_seconds, 60),
+            tools=[],
         )
 
     def run_synthesizer_agent(
@@ -169,7 +194,8 @@ class ManagedAgentClient:
             prompt=_synthesizer_agent_prompt(cluster, bull, bear, decision),
             agents_dir=agents_dir,
             system_instruction="You are Forge's Synthesizer. Turn an approved product direction into a pitch and builder system prompt.",
-            timeout_seconds=timeout_seconds,
+            timeout_seconds=min(timeout_seconds, 60),
+            tools=[],
         )
 
     def run_builder_agent(
@@ -195,8 +221,10 @@ class ManagedAgentClient:
                 ],
             },
             tools=[{"type": "code_execution"}],
+            extra_headers={"Api-Revision": API_REVISION},
+            timeout=timeout_seconds,
         )
-        return getattr(interaction, "output_text", "") or str(interaction)
+        return _interaction_text(interaction)
 
     def run_deep_research(
         self,
@@ -224,6 +252,8 @@ class ManagedAgentClient:
                 "thinking_summaries": "auto",
             },
             background=True,
+            extra_headers={"Api-Revision": API_REVISION},
+            timeout=timeout_seconds,
         )
         interaction_id = getattr(interaction, "id", None)
         if not interaction_id:
@@ -240,11 +270,75 @@ class ManagedAgentClient:
             state_text = str(state).lower()
             print(f"deep_research: state={state_text}", flush=True)
             if "completed" in state_text or "succeeded" in state_text:
-                return getattr(current, "output_text", "") or str(current)
+                return _interaction_text(current)
             if "failed" in state_text or "cancelled" in state_text:
                 raise RuntimeError(f"Deep Research interaction failed: {current}")
             time.sleep(poll_seconds)
         raise TimeoutError(f"Deep Research interaction did not complete in {timeout_seconds}s")
+
+    def _create_interaction_rest(self, payload: dict[str, Any], timeout_seconds: int) -> str:
+        if not self.api_key:
+            raise RuntimeError("GEMINI_API_KEY is required for managed-agent calls.")
+
+        request = Request(
+            INTERACTIONS_ENDPOINT,
+            data=json.dumps(payload).encode("utf-8"),
+            method="POST",
+            headers={
+                "Api-Revision": API_REVISION,
+                "Content-Type": "application/json",
+                "x-goog-api-key": self.api_key,
+            },
+        )
+        try:
+            with urlopen(request, timeout=timeout_seconds) as response:
+                raw = response.read().decode("utf-8")
+        except HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"Interactions API returned HTTP {exc.code}: {body[:800]}") from exc
+        except (TimeoutError, socket.timeout) as exc:
+            raise TimeoutError(f"Interactions API did not complete in {timeout_seconds}s") from exc
+        except URLError as exc:
+            raise TimeoutError(f"Interactions API did not complete in {timeout_seconds}s: {exc}") from exc
+
+        return _interaction_text(json.loads(raw))
+
+
+def _interaction_text(interaction: Any) -> str:
+    if isinstance(interaction, dict):
+        output_text = interaction.get("output_text")
+        if isinstance(output_text, str) and output_text:
+            return output_text
+        steps = interaction.get("steps")
+        if isinstance(steps, list):
+            parts: list[str] = []
+            for step in steps:
+                if not isinstance(step, dict) or step.get("type") != "model_output":
+                    continue
+                for item in step.get("content") or []:
+                    if isinstance(item, dict) and isinstance(item.get("text"), str):
+                        parts.append(item["text"])
+            if parts:
+                return "\n".join(parts)
+        return json.dumps(interaction)
+
+    output_text = getattr(interaction, "output_text", "")
+    if output_text:
+        return str(output_text)
+    steps = getattr(interaction, "steps", None)
+    if steps:
+        parts: list[str] = []
+        for step in steps:
+            if getattr(step, "type", None) != "model_output":
+                continue
+            content = getattr(step, "content", None) or []
+            for item in content:
+                text = getattr(item, "text", None)
+                if text:
+                    parts.append(str(text))
+        if parts:
+            return "\n".join(parts)
+    return str(interaction)
 
 
 def _antigravity_prompt(topic: str) -> str:
@@ -370,7 +464,7 @@ def _research_analyst_prompt(topic: str, media_items: list[MediaItem]) -> str:
             "title": item.title,
             "url": item.url,
             "summary": item.summary,
-            "captured_text": item.captured_text,
+            "captured_text": _compact_prompt_text(item.captured_text),
             "tags": item.tags,
         }
         for index, item in enumerate(media_items)
@@ -435,6 +529,13 @@ Return a concise report followed by exactly one fenced JSON block:
   ]
 }}
 """
+
+
+def _compact_prompt_text(value: str, limit: int = 500) -> str:
+    text = " ".join(str(value or "").split())
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3].rstrip() + "..."
 
 
 def _cluster_packet(cluster: OpportunityCluster) -> dict[str, Any]:

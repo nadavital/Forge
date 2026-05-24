@@ -39,20 +39,31 @@ export async function triggerProjectPipeline(projectId: string): Promise<{ runId
     await completePipelineRun(run.id, {
       source: "github",
       repo_url: discovery.repoUrl,
-      digest_summary: `Imported ${discovery.projectName} and generated ${discovery.opportunities.length} repo-specific opportunities.`,
+      digest_summary:
+        discovery.opportunities.length > 0
+          ? `Analyzed ${discovery.projectName} and generated ${discovery.opportunities.length} repo-specific opportunities.`
+          : `Analyzed ${discovery.projectName}. Forge collected repo context but did not find enough evidence for a recommendation yet.`,
       changes: [
         reflectionLine,
         `Collected ${discovery.signals.length} GitHub repo signals`,
-        `Ranked ${discovery.opportunities.length} opportunities from README and issue context`,
-        "Build briefs will target the connected repository"
+        discovery.opportunities.length > 0
+          ? `Ranked ${discovery.opportunities.length} opportunities from README and issue context`
+          : "No recommendation cards were created because the repo evidence was too thin",
+        discovery.opportunities.length > 0
+          ? "Build briefs will target the connected repository"
+          : "Add issues, notes, or run managed research to generate stronger opportunities"
       ],
       reflection_proposal_count: reflection.proposalCount,
-      reflection_run_ids: reflection.runIds
+      reflection_run_ids: reflection.runIds,
+      project_knowledge: discovery.knowledge
     });
 
     return {
       runId: run.id,
-      message: `Pipeline run completed for ${discovery.projectName}. Refresh to review repo-specific ideas.`
+      message:
+        discovery.opportunities.length > 0
+          ? `Pipeline run completed for ${discovery.projectName}. Refresh to review repo-specific ideas.`
+          : `Pipeline run completed for ${discovery.projectName}. Forge needs more evidence before recommending ideas.`
     };
   }
 
@@ -74,12 +85,17 @@ export async function triggerProjectPipeline(projectId: string): Promise<{ runId
 
   await completePipelineRun(run.id, {
     source: "new_product_generated",
-    digest_summary: `Generated ${discovery.opportunities.length} new-product directions from your preference profile.`,
+    digest_summary:
+      discovery.opportunities.length > 0
+        ? `Generated ${discovery.opportunities.length} new-product direction${discovery.opportunities.length === 1 ? "" : "s"} from explicit project context.`
+        : "Collected project context. Forge needs concrete notes, feedback, or research evidence before recommending ideas.",
     changes: [
       reflectionLine,
-      `Generated ${discovery.signals.length} preference/profile signals`,
-      `Ranked ${discovery.opportunities.length} buildable ideas for review`,
-      "Each idea keeps source origin separate from market evidence"
+      `Collected ${discovery.signals.length} project context signals`,
+      discovery.opportunities.length > 0
+        ? `Ranked ${discovery.opportunities.length} manually grounded idea${discovery.opportunities.length === 1 ? "" : "s"} for review`
+        : "No recommendation cards were created because no concrete product evidence was supplied",
+      "Forge will not show seeded placeholder opportunities as recommendations"
     ],
     reflection_proposal_count: reflection.proposalCount,
     reflection_run_ids: reflection.runIds

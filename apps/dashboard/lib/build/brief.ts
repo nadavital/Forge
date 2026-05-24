@@ -43,6 +43,19 @@ export type BuildBrief = JsonObject & {
   }>;
 };
 
+type CompactBuildBrief = {
+  title: string;
+  problem: string;
+  mvp_concept: string;
+  target_user: string;
+  project: BuildBrief["project"];
+  build_target: BuildBrief["build_target"];
+  template_repo_url: string;
+  generated_pr_contract: BuildBrief["generated_pr_contract"];
+  evidence: BuildBrief["evidence"];
+  evaluations: BuildBrief["evaluations"];
+};
+
 export function createBuildBrief(input: {
   adapter: BuildBrief["adapter"];
   opportunity: DbOpportunity;
@@ -93,21 +106,31 @@ export function createBuildBrief(input: {
 }
 
 export function createManagedBuilderPrompt(brief: BuildBrief): string {
+  const compact = compactBuildBrief(brief);
   const targetLine =
     brief.build_target.kind === "generated_repo_with_pr"
       ? `Create a new generated repo named ${brief.build_target.generated_repo_name} under ${brief.build_target.generated_repo_owner}, then open a PR against that repo.`
       : `Open a PR against the existing target repo ${brief.build_target.target_repo_url}.`;
+  const filesOnly =
+    brief.build_target.kind === "existing_repo_pr" || process.env.FORGE_MANAGED_BUILDER_FILES_ONLY === "1";
+
   return [
-    "Build the approved Forge MVP and prepare it for a GitHub PR.",
+    "Build the approved Forge MVP as a small file bundle for a GitHub PR.",
     "",
     `Target: ${targetLine}`,
     "Forge owns GitHub credentials server-side. Do not request, invent, or expose secrets from the sandbox.",
-    "Return either PR metadata if you opened the PR yourself, or a files[] bundle so Forge can create the repo/branch/PR server-side.",
+    filesOnly
+      ? "Return files[] only. Forge will create the branch and PR server-side after validating your files."
+      : "Return either PR metadata if you opened the PR yourself, or a files[] bundle so Forge can create the repo/branch/PR server-side.",
+    "Do not use sandbox tools, run shell commands, install dependencies, inspect files, or test the app. Generate the file bundle directly from the build brief.",
+    "Do not inspect or summarize the whole target repository. Keep the MVP isolated under the Forge-scoped path that the server will apply.",
+    "Keep the response small: no more than 5 files, no screenshots, and no file over 4000 characters.",
+    "Prefer a tiny static React/Vite prototype plus README and smoke-check instructions.",
     "",
     "Priority order:",
-    "1. Follow the human-approved opportunity and any project repo context.",
+    "1. Follow the human-approved opportunity.",
     "2. Stay within the MVP concept and target user in the build brief.",
-    "3. Use the template repo as the starting point.",
+    "3. Generate the smallest runnable prototype that proves the product wedge.",
     "4. Use code and free services only. Do not add paid APIs, production deployments, or secret-requiring integrations.",
     "",
     "Required output:",
@@ -121,10 +144,8 @@ export function createManagedBuilderPrompt(brief: BuildBrief): string {
     "When complete, return one JSON object with this shape:",
     JSON.stringify(
       {
-        generated_repo_url: "https://github.com/org/repo",
-        branch: "forge/opportunity-slug",
-        pr_url: "https://github.com/org/repo/pull/123",
         logs: "Short build and review summary.",
+        summary: "What was built and how it satisfies the MVP.",
         files: [
           { path: "package.json", content: "{\"scripts\":{\"dev\":\"vite --host 0.0.0.0\"}}" },
           { path: "README.md", content: "Setup, run instructions, product MVP explanation, and free services." },
@@ -141,9 +162,32 @@ export function createManagedBuilderPrompt(brief: BuildBrief): string {
       2
     ),
     "",
-    "Build brief:",
-    JSON.stringify(brief, null, 2)
+    "Compact build brief:",
+    JSON.stringify(compact, null, 2)
   ].join("\n");
+}
+
+export function compactBuildBrief(brief: BuildBrief): CompactBuildBrief {
+  return {
+    title: truncate(brief.title, 160),
+    problem: truncate(brief.problem, 700),
+    mvp_concept: truncate(brief.mvp_concept, 900),
+    target_user: truncate(brief.target_user, 240),
+    project: brief.project,
+    build_target: brief.build_target,
+    template_repo_url: brief.template_repo_url,
+    generated_pr_contract: brief.generated_pr_contract,
+    evidence: brief.evidence.slice(0, 4).map((item) => ({
+      source: truncate(item.source, 80),
+      title: truncate(item.title, 240),
+      url: item.url
+    })),
+    evaluations: brief.evaluations.slice(0, 4).map((evaluation) => ({
+      evaluator: truncate(evaluation.evaluator, 80),
+      content: truncate(evaluation.content, 700),
+      scores: evaluation.scores
+    }))
+  };
 }
 
 function buildTargetFor(input: { project: DbProject; opportunityTitle: string }): BuildBrief["build_target"] {
@@ -184,6 +228,11 @@ function buildTargetFor(input: { project: DbProject; opportunityTitle: string })
 
 function clean(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function truncate(value: string, max: number): string {
+  const cleanValue = clean(value);
+  return cleanValue.length > max ? `${cleanValue.slice(0, max - 1)}…` : cleanValue;
 }
 
 function slugify(value: string): string {

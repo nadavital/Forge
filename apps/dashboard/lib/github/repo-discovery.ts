@@ -6,6 +6,7 @@ type GitHubRepo = {
   html_url: string;
   description: string | null;
   language: string | null;
+  default_branch?: string;
   topics?: string[];
   stargazers_count?: number;
   open_issues_count?: number;
@@ -24,10 +25,16 @@ type GitHubIssue = {
   updated_at?: string;
 };
 
+type GitHubTreeEntry = {
+  path: string;
+  type: "blob" | "tree" | "commit";
+};
+
 export type RepoDiscoveryResult = {
   repoUrl: string;
   projectName: string;
   productContext: string;
+  knowledge: JsonObject;
   signals: Array<Omit<DbSignal, "id" | "project_id">>;
   opportunities: Array<
     Omit<DbOpportunity, "id" | "project_id" | "pipeline_run_id"> & {
@@ -46,6 +53,7 @@ export async function discoverGitHubRepo(repoUrl: string): Promise<RepoDiscovery
     fetchReadme(repoRef.owner, repoRef.name),
     fetchIssues(repoRef.owner, repoRef.name)
   ]);
+  const tree = await fetchRepoTree(repoRef.owner, repoRef.name, repo.default_branch);
 
   const productText = compact([repo.description, readme].filter(Boolean).join("\n\n"), 2200);
   const issueSignals = issues
@@ -77,6 +85,7 @@ export async function discoverGitHubRepo(repoUrl: string): Promise<RepoDiscovery
           repo.description ? `Description: ${repo.description}` : "",
           repo.language ? `Primary language: ${repo.language}` : "",
           repo.topics?.length ? `Topics: ${repo.topics.join(", ")}` : "",
+          tree.length ? `Observed files: ${tree.slice(0, 80).map((entry) => entry.path).join(", ")}` : "",
           readme ? `README: ${compact(readme, 1000)}` : ""
         ]
           .filter(Boolean)
@@ -92,6 +101,7 @@ export async function discoverGitHubRepo(repoUrl: string): Promise<RepoDiscovery
     repo,
     readme,
     issues,
+    tree,
     signals
   });
 
@@ -99,43 +109,102 @@ export async function discoverGitHubRepo(repoUrl: string): Promise<RepoDiscovery
     repoUrl: repo.html_url,
     projectName: repo.full_name,
     productContext: productText || repo.description || repo.full_name,
+    knowledge: buildProjectKnowledge(repo, readme, issues, tree),
     signals,
     opportunities
   };
+}
+
+function buildProjectKnowledge(
+  repo: GitHubRepo,
+  readme: string,
+  issues: GitHubIssue[],
+  tree: GitHubTreeEntry[]
+): JsonObject {
+  const files = tree.filter((entry) => entry.type === "blob").map((entry) => entry.path);
+  const surfaces = detectRepoSurfaces(files, readme);
+  const frameworks = detectFrameworks(files, readme);
+  const workflows = surfaces.map((surface) => surface.label);
+  const activeIssues = actionableIssues(issues).slice(0, 5);
+
+  return {
+    repo: repo.full_name,
+    repo_url: repo.html_url,
+    description: repo.description,
+    primary_language: repo.language,
+    topics: repo.topics ?? [],
+    semantic_summary: summarizeProject(repo, readme, frameworks, workflows),
+    frameworks,
+    app_surfaces: surfaces.slice(0, 8).map((surface) => ({
+      id: surface.id,
+      label: surface.label,
+      evidence_files: surface.files.slice(0, 10)
+    })),
+    product_workflows: workflows.slice(0, 8),
+    evidence_counts: {
+      files_seen: files.length,
+      issues_seen: issues.filter((issue) => !issue.pull_request).length,
+      actionable_issues: activeIssues.length,
+      surfaces_detected: surfaces.length
+    },
+    recent_repo_signals: activeIssues.map((issue) => ({
+      issue_number: issue.number,
+      title: issue.title,
+      url: issue.html_url
+    })),
+    updated_at: new Date().toISOString()
+  };
+}
+
+function summarizeProject(
+  repo: GitHubRepo,
+  readme: string,
+  frameworks: string[],
+  workflows: string[]
+): string {
+  const readmeLine = readmeEvidenceLine(readme);
+  const frameworkLine = frameworks.length > 0 ? `${frameworks.slice(0, 3).join(", ")} app` : "software project";
+  const workflowLine = workflows.length > 0 ? ` with ${workflows.slice(0, 3).join(", ")} surfaces` : "";
+  return compact(`${repo.full_name} appears to be a ${frameworkLine}${workflowLine}. ${readmeLine || repo.description || ""}`, 360);
+}
+
+function detectFrameworks(files: string[], readme: string): string[] {
+  const evidence = `${files.join("\n")}\n${readme}`.toLowerCase();
+  const frameworks: Array<[string, string[]]> = [
+    ["SwiftUI", ["swiftui", ".xcodeproj", "package.swift"]],
+    ["iOS", ["ios", ".xcodeproj", "appdelegate", "scenedelegate", "widget"]],
+    ["Next.js", ["next.config", "app/page.tsx", "pages/", "next dev"]],
+    ["React", ["react", "jsx", "tsx", "vite.config"]],
+    ["Python", ["requirements.txt", "pyproject.toml", ".py"]],
+    ["Supabase", ["supabase", "postgres", "rls"]]
+  ];
+
+  return frameworks
+    .filter(([, terms]) => terms.some((term) => evidence.includes(term)))
+    .map(([name]) => name);
 }
 
 function synthesizeRepoOpportunities(input: {
   repo: GitHubRepo;
   readme: string;
   issues: GitHubIssue[];
+  tree: GitHubTreeEntry[];
   signals: Array<Omit<DbSignal, "id" | "project_id">>;
 }): RepoDiscoveryResult["opportunities"] {
-  const text = `${input.repo.description ?? ""}\n${input.readme}\n${input.issues
-    .map((issue) => `${issue.title}\n${issue.body ?? ""}\n${issue.labels?.map((label) => label.name).join(" ")}`)
-    .join("\n")}`.toLowerCase();
   const repoSignalIndex = 0;
   const issueIndexes = input.signals.map((_, index) => index).slice(1);
-  const domain = inferDomain(text, input.repo);
-  const opportunities = domainOpportunities(domain, input.repo, repoSignalIndex);
+  const opportunities = actionableIssues(input.issues)
+    .slice(0, 4)
+    .map((issue) => {
+      const signalIndex = issueIndexes.find((index) => input.signals[index]?.url === issue.html_url);
+      return issueDerivedOpportunity(input.repo, issue, [
+        repoSignalIndex,
+        ...(signalIndex ? [signalIndex] : [])
+      ]);
+    });
 
-  const categories = scoreCategories(text, input.issues);
-  for (const category of categories.slice(0, 2)) {
-    const linkedIssues = issueIndexes.filter((index) => category.matches(input.signals[index]));
-    const signalIndexes = [repoSignalIndex, ...linkedIssues].slice(0, 5);
-    opportunities.push(makeOpportunity({
-      title: `${category.label} for ${input.repo.name}`,
-      problem: category.problem(input.repo.name),
-      targetUser: category.targetUser(),
-      mvpConcept: category.mvp(),
-      score: Math.min(92, 70 + category.score * 4 + linkedIssues.length * 3),
-      rationale: `${category.score} repo signals matched ${category.label.toLowerCase()} language.`,
-      signalIndexes,
-      profile: {
-        domain,
-        category: category.id,
-        observed_terms: category.terms
-      }
-    }));
+  if (opportunities.length === 0) {
+    opportunities.push(...repoSurfaceOpportunities(input.repo, input.readme, input.tree, repoSignalIndex));
   }
 
   return dedupeOpportunities(opportunities)
@@ -143,125 +212,174 @@ function synthesizeRepoOpportunities(input: {
     .slice(0, 4);
 }
 
-function domainOpportunities(domain: string, repo: GitHubRepo, repoSignalIndex: number): RepoDiscoveryResult["opportunities"] {
-  if (domain === "robotics") {
-    return [
-      makeOpportunity({
-        title: "Mission replay and uncertainty inspector",
-        problem: "Robotics builders need to see why an autonomous exploration run chose a path before trusting it outside simulation.",
-        targetUser: "Robotics researchers and autonomy engineers",
-        mvpConcept:
-          "Upload or load a simulation run, replay the trajectory, and overlay map coverage, frontier choices, and uncertainty hotspots.",
-        score: 95,
-        rationale: "The repository is centered on autonomous exploration, active mapping, and uncertainty-aware planning.",
-        signalIndexes: [repoSignalIndex],
-        profile: { domain, repo: repo.full_name }
-      })
-    ];
-  }
-
-  if (domain === "audiobook") {
-    return [
-      makeOpportunity({
-        title: "Audiobook conversion QA workspace",
-        problem: "EPUB-to-audio users need to catch bad chapter splits, language detection misses, and pronunciation issues before a long export finishes.",
-        targetUser: "Readers converting multilingual EPUBs into personal audiobooks",
-        mvpConcept:
-          "Preflight an EPUB into chapters, detected languages, sample voices, and warnings before generating the full MP3 set.",
-        score: 95,
-        rationale: "The repository focuses on multilingual EPUB to MP3 conversion.",
-        signalIndexes: [repoSignalIndex],
-        profile: { domain, repo: repo.full_name }
-      })
-    ];
-  }
-
-  if (domain === "computer_vision") {
-    return [
-      makeOpportunity({
-        title: "Model demo and failure gallery",
-        problem: "Computer vision project users need a quick way to inspect model behavior, compare examples, and understand failure cases.",
-        targetUser: "Researchers and developers evaluating the vision model",
-        mvpConcept:
-          "A lightweight gallery that runs sample inputs, groups outputs by success/failure mode, and links each result back to reproducible commands.",
-        score: 92,
-        rationale: "The repository appears to be a computer vision or model evaluation project.",
-        signalIndexes: [repoSignalIndex],
-        profile: { domain, repo: repo.full_name }
-      })
-    ];
-  }
-
-  return [
-    makeOpportunity({
-      title: "Repo onboarding cockpit",
-      problem: "New users need a clear path from cloning the repo to seeing a working result.",
-      targetUser: "Developers trying the repository for the first time",
-      mvpConcept: "A local dashboard that checks dependencies, runs the first example, and explains failures with linked docs.",
-      score: 78,
-      rationale: "Repository context is available; first-run experience is a broadly testable wedge.",
-      signalIndexes: [repoSignalIndex],
-      profile: { domain, repo: repo.full_name }
+function actionableIssues(issues: GitHubIssue[]): GitHubIssue[] {
+  return issues
+    .filter((issue) => !issue.pull_request)
+    .filter((issue) => {
+      const body = issue.body?.trim() ?? "";
+      const labels = issue.labels?.map((label) => label.name).filter(Boolean) ?? [];
+      return body.length >= 80 || labels.length > 0 || issue.comments > 0;
     })
-  ];
+    .sort((a, b) => issueEvidenceScore(b) - issueEvidenceScore(a));
 }
 
-function scoreCategories(text: string, issues: GitHubIssue[]) {
-  const categories = categoryDefinitions();
-  return categories
-    .map((category) => ({
-      ...category,
-      score:
-        countTerms(text, category.terms) +
-        issues.filter((issue) => category.matches(issueSignal(issue))).length * 2
-    }))
-    .filter((category) => category.score > 0)
-    .sort((a, b) => b.score - a.score);
+function issueEvidenceScore(issue: GitHubIssue): number {
+  return (issue.body?.trim().length ?? 0) / 120 + (issue.labels?.length ?? 0) * 2 + issue.comments * 3;
 }
 
-function categoryDefinitions() {
-  return [
+function issueDerivedOpportunity(
+  repo: GitHubRepo,
+  issue: GitHubIssue,
+  signalIndexes: number[]
+): RepoDiscoveryResult["opportunities"][number] {
+  const labels = issue.labels?.map((label) => label.name).filter(Boolean) ?? [];
+  const evidenceSummary = compact(issue.body?.trim() || issue.title, 360);
+  const labelSummary = labels.length > 0 ? ` Labels: ${labels.join(", ")}.` : "";
+  const commentSummary = issue.comments > 0 ? ` ${issue.comments} comment${issue.comments === 1 ? "" : "s"} on the issue.` : "";
+
+  return makeOpportunity({
+    title: `Address #${issue.number}: ${compact(issue.title, 82)}`,
+    problem: `${repo.name} has a concrete repo signal in issue #${issue.number}: ${evidenceSummary}${labelSummary}${commentSummary}`,
+    targetUser: "Developers and maintainers working with this repository",
+    mvpConcept: `Implement the smallest reviewable change that resolves or materially advances issue #${issue.number}: ${compact(issue.title, 120)}.`,
+    score: Math.min(90, 64 + Math.round(issueEvidenceScore(issue))),
+    rationale: `Created from GitHub issue #${issue.number}, not from a generic repository template.`,
+    signalIndexes,
+    profile: {
+      origin: "github_issue",
+      repo: repo.full_name,
+      issue_number: issue.number,
+      issue_url: issue.html_url,
+      labels
+    }
+  });
+}
+
+function repoSurfaceOpportunities(
+  repo: GitHubRepo,
+  readme: string,
+  tree: GitHubTreeEntry[],
+  repoSignalIndex: number
+): RepoDiscoveryResult["opportunities"] {
+  const files = tree.filter((entry) => entry.type === "blob").map((entry) => entry.path);
+  const surfaces = detectRepoSurfaces(files, readme);
+  const readmeEvidence = readmeEvidenceLine(readme);
+
+  return surfaces.slice(0, 3).map((surface) =>
+    makeOpportunity({
+      title: `${surface.title} in ${repo.name}`,
+      problem: `${repo.name} has an active ${surface.label} workflow that looks important to the user experience.${readmeEvidence ? ` README context: ${readmeEvidence}` : ""}`,
+      targetUser: surface.targetUser,
+      mvpConcept: surface.mvpConcept(repo.name),
+      score: surface.score,
+      rationale: surface.rationale(),
+      signalIndexes: [repoSignalIndex],
+      profile: {
+        origin: "repo_surface",
+        repo: repo.full_name,
+        surface: surface.id,
+        evidence_files: surface.files.slice(0, 12)
+      }
+    })
+  );
+}
+
+function detectRepoSurfaces(files: string[], readme: string) {
+  const text = `${files.join("\n")}\n${readme}`.toLowerCase();
+  const candidates = [
     {
-      id: "setup",
-      label: "First-run setup helper",
-      terms: ["install", "setup", "dependency", "environment", "docker", "build error", "requirements", "quickstart"],
-      problem: (repoName: string) => `${repoName} users can lose time getting the first successful local run.`,
-      targetUser: () => "Developers trying the project locally",
-      mvp: () => "A setup doctor that validates environment, dependencies, sample data, and first-run commands.",
-      matches: (signal?: { title?: string | null; body?: string | null }) =>
-        includesAny(`${signal?.title ?? ""} ${signal?.body ?? ""}`, ["install", "setup", "dependency", "build", "docker"])
+      id: "onboarding",
+      label: "onboarding and first-run",
+      title: "Improve first-run activation",
+      terms: ["onboarding", "signup", "login", "auth", "welcome", "tutorial", "firstlaunch", "paywall"],
+      targetUser: "New users opening the app for the first time",
+      mvpConcept: (repoName: string) =>
+        `Add a reviewable first-run improvement for ${repoName}: clearer setup state, progress feedback, or a guided empty-state path using the existing onboarding files.`,
+      rationale: () => "The repo contains onboarding/auth surfaces, so the next useful improvement is likely reducing first-run friction.",
+      score: 84
     },
     {
-      id: "examples",
-      label: "Example and demo launcher",
-      terms: ["example", "demo", "tutorial", "readme", "usage", "sample", "notebook"],
-      problem: (repoName: string) => `${repoName} needs a faster path from project promise to visible working output.`,
-      targetUser: () => "Developers and evaluators scanning the project",
-      mvp: () => "A guided demo launcher with one-click sample runs, expected output, and troubleshooting notes.",
-      matches: (signal?: { title?: string | null; body?: string | null }) =>
-        includesAny(`${signal?.title ?? ""} ${signal?.body ?? ""}`, ["example", "demo", "usage", "sample", "tutorial"])
+      id: "planning",
+      label: "planning and generation",
+      title: "Make generated plans easier to trust",
+      terms: ["plan", "planner", "generate", "gemini", "ai", "recommendation", "schedule", "routine"],
+      targetUser: "Users relying on generated app recommendations or plans",
+      mvpConcept: (repoName: string) =>
+        `Add transparency around one generated ${repoName} workflow: show why the result was created, what inputs affected it, and how to regenerate or adjust it.`,
+      rationale: () => "The app appears to generate plans or recommendations, so trust and editability are high-leverage product improvements.",
+      score: 86
     },
     {
-      id: "performance",
-      label: "Performance profiler",
-      terms: ["slow", "latency", "performance", "memory", "gpu", "optimize", "runtime", "benchmark"],
-      problem: () => "Users need to know which step is slow or resource-heavy before changing model or pipeline code.",
-      targetUser: () => "Developers running the project on local or research hardware",
-      mvp: () => "A benchmark runner that records runtime, memory, hardware context, and compares runs over time.",
-      matches: (signal?: { title?: string | null; body?: string | null }) =>
-        includesAny(`${signal?.title ?? ""} ${signal?.body ?? ""}`, ["slow", "performance", "memory", "gpu", "benchmark"])
+      id: "tracking",
+      label: "tracking and progress",
+      title: "Strengthen progress feedback",
+      terms: ["progress", "history", "stats", "analytics", "tracker", "tracking", "streak", "chart"],
+      targetUser: "Returning users checking whether the product is helping them improve",
+      mvpConcept: (repoName: string) =>
+        `Build a small progress review surface in ${repoName} using existing tracked data, with one clear trend and one suggested next action.`,
+      rationale: () => "The repo contains progress/history surfaces, so Forge can improve the returning-user feedback loop.",
+      score: 82
     },
     {
-      id: "evaluation",
-      label: "Evaluation harness",
-      terms: ["test", "accuracy", "evaluation", "metric", "validate", "regression", "compare"],
-      problem: () => "Project maintainers need a repeatable way to tell whether changes improve real outcomes.",
-      targetUser: () => "Maintainers and contributors",
-      mvp: () => "A small evaluation harness with fixture inputs, metrics, and before/after comparison reports.",
-      matches: (signal?: { title?: string | null; body?: string | null }) =>
-        includesAny(`${signal?.title ?? ""} ${signal?.body ?? ""}`, ["test", "accuracy", "eval", "metric", "regression"])
+      id: "workout",
+      label: "workout and activity",
+      title: "Tighten the live activity loop",
+      terms: ["workout", "exercise", "activity", "timer", "set", "rep", "muscle", "training"],
+      targetUser: "Users actively logging or following activity inside the app",
+      mvpConcept: (repoName: string) =>
+        `Improve one active-use ${repoName} flow so the user can see current state, next step, and completion outcome without leaving the main activity screen.`,
+      rationale: () => "The repo has a live workout/activity workflow, which is a good candidate for a focused usability improvement.",
+      score: 88
+    },
+    {
+      id: "nutrition",
+      label: "nutrition and logging",
+      title: "Clarify food logging outcomes",
+      terms: ["food", "meal", "nutrition", "calorie", "macro", "protein", "carb", "fat"],
+      targetUser: "Users logging nutrition or reviewing meal decisions",
+      mvpConcept: (repoName: string) =>
+        `Improve a nutrition logging or review flow in ${repoName} with clearer post-log feedback and one practical next suggestion.`,
+      rationale: () => "The repo has nutrition logging surfaces, so the opportunity is to make post-log feedback more immediately useful.",
+      score: 85
+    },
+    {
+      id: "widgets",
+      label: "widget and shortcut",
+      title: "Expose the fastest return path",
+      terms: ["widget", "shortcut", "intent", "liveactivity", "notification", "deeplink"],
+      targetUser: "Returning users who need fast access outside the main app",
+      mvpConcept: (repoName: string) =>
+        `Add or improve one ${repoName} shortcut/widget return path that lands users directly in the relevant active workflow.`,
+      rationale: () => "The repo includes widgets, intents, or shortcuts, so Forge can improve the fastest return path for repeat use.",
+      score: 80
     }
   ];
+
+  return candidates
+    .map((candidate) => {
+      const matchedFiles = files.filter((file) => includesAny(file, candidate.terms));
+      const readmeHits = candidate.terms.filter((term) => text.includes(term));
+      return {
+        ...candidate,
+        files: matchedFiles,
+        evidenceScore: matchedFiles.length * 3 + readmeHits.length
+      };
+    })
+    .filter((candidate) => candidate.evidenceScore >= 3 && candidate.files.length > 0)
+    .sort((a, b) => b.evidenceScore - a.evidenceScore);
+}
+
+function readmeEvidenceLine(readme: string): string {
+  const line = readme
+    .split(/\n+/)
+    .map((entry) => entry.replace(/^#+\s*/, "").trim())
+    .find((entry) => entry.length >= 40 && entry.length <= 220);
+  return line ? compact(line, 180) : "";
+}
+
+function includesAny(text: string, terms: string[]): boolean {
+  const lowered = text.toLowerCase();
+  return terms.some((term) => lowered.includes(term));
 }
 
 function makeOpportunity(input: {
@@ -287,12 +405,12 @@ function makeOpportunity(input: {
     evaluations: [
       {
         evaluator: "taste_critic",
-        content: "The MVP is narrow, demoable from repository context, and avoids paid or production dependencies.",
+        content: "Repo-derived evidence: the MVP is tied to a concrete GitHub issue and avoids paid or production dependencies.",
         scores: { usefulness: 0.82, coherence: 0.84, differentiation: 0.72 }
       },
       {
         evaluator: "bull",
-        content: "The repo already supplies enough context to create a concrete workflow improvement instead of a generic idea.",
+        content: "The linked issue supplies enough context to create a concrete workflow improvement instead of a generic example.",
         scores: {}
       },
       {
@@ -309,23 +427,6 @@ function makeOpportunity(input: {
   };
 }
 
-function inferDomain(text: string, repo: GitHubRepo): string {
-  const combined = `${repo.full_name} ${repo.description ?? ""} ${text}`.toLowerCase();
-  if (includesAny(combined, ["drone", "airsim", "robot", "mapping", "exploration", "trajectory", "planner"])) {
-    return "robotics";
-  }
-  if (includesAny(combined, ["epub", "audiobook", "mp3", "tts", "voice", "chapter"])) {
-    return "audiobook";
-  }
-  if (includesAny(combined, ["vision", "image", "pose", "detection", "diffusion", "forensics", "spectral"])) {
-    return "computer_vision";
-  }
-  if (includesAny(combined, ["compiler", "jit", "aot", "runtime", "graph"])) {
-    return "ml_systems";
-  }
-  return "developer_tool";
-}
-
 function dedupeOpportunities<T extends { title?: string | null }>(opportunities: T[]): T[] {
   const seen = new Set<string>();
   return opportunities.filter((opportunity) => {
@@ -334,13 +435,6 @@ function dedupeOpportunities<T extends { title?: string | null }>(opportunities:
     seen.add(key);
     return true;
   });
-}
-
-function issueSignal(issue: GitHubIssue): { title: string; body: string } {
-  return {
-    title: issue.title,
-    body: `${issue.body ?? ""} ${issue.labels?.map((label) => label.name).join(" ")}`
-  };
 }
 
 async function fetchReadme(owner: string, name: string): Promise<string> {
@@ -358,6 +452,17 @@ async function fetchReadme(owner: string, name: string): Promise<string> {
 async function fetchIssues(owner: string, name: string): Promise<GitHubIssue[]> {
   try {
     return await fetchGitHub<GitHubIssue[]>(`/repos/${owner}/${name}/issues?state=all&per_page=${ISSUE_LIMIT}&sort=updated`);
+  } catch {
+    return [];
+  }
+}
+
+async function fetchRepoTree(owner: string, name: string, branch = "main"): Promise<GitHubTreeEntry[]> {
+  try {
+    const payload = await fetchGitHub<{ tree?: GitHubTreeEntry[] }>(
+      `/repos/${owner}/${name}/git/trees/${encodeURIComponent(branch)}?recursive=1`
+    );
+    return Array.isArray(payload.tree) ? payload.tree.slice(0, 500) : [];
   } catch {
     return [];
   }
@@ -398,15 +503,6 @@ function parseGitHubRepo(repoUrl: string): { owner: string; name: string } {
     throw new Error("GitHub repository URL must include owner and repo.");
   }
   return { owner, name: repo.replace(/\.git$/, "") };
-}
-
-function countTerms(text: string, terms: string[]): number {
-  return terms.reduce((count, term) => count + (text.includes(term) ? 1 : 0), 0);
-}
-
-function includesAny(text: string, terms: string[]): boolean {
-  const lowered = text.toLowerCase();
-  return terms.some((term) => lowered.includes(term));
 }
 
 function compact(value: string, limit = 700): string {

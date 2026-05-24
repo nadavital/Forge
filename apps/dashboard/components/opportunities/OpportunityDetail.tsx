@@ -147,6 +147,7 @@ export function OpportunityDetail({ opportunity, projectId, projectName }: Oppor
             {narrative.buildLine ? (
               <div className="response-build">
                 <p>{narrative.buildLine}</p>
+                {narrative.buildSummary ? <p>{narrative.buildSummary}</p> : null}
                 {narrative.buildLogs ? <p className="build-logs">{narrative.buildLogs}</p> : null}
                 {narrative.buildLinks?.map((link) => (
                   <a href={link.url} key={link.url} rel="noreferrer" target="_blank">
