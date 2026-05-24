@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTransition } from "react";
-import { Play, Settings2 } from "lucide-react";
+import { Settings2, Sparkles } from "lucide-react";
 import { runProjectPipeline } from "@/app/actions/pipeline";
 
 type ProjectHeaderProps = {
@@ -18,7 +18,10 @@ type ProjectHeaderProps = {
 export function ProjectHeader({
   projectId,
   projectName,
-  mode
+  mode,
+  runStatus,
+  signalCount = 0,
+  opportunityCount = 0
 }: ProjectHeaderProps) {
   const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
@@ -36,13 +39,18 @@ export function ProjectHeader({
       <div className="project-header-top">
         <div className="project-header-copy">
           <h1>{projectName}</h1>
-          <p className="project-subline">{mode}</p>
+          <p className="project-subline">
+            {mode} · {signalCount} signals · {opportunityCount} suggestions
+          </p>
+          <span className={isPending ? "dream-status active" : "dream-status"}>
+            {isPending ? "Dreaming now" : runStatus}
+          </span>
         </div>
 
         {onReview ? (
           <button className="btn btn-secondary" disabled={isPending} onClick={runAgain} type="button">
-            <Play aria-hidden="true" />
-            {isPending ? "Running…" : "Run again"}
+            <Sparkles aria-hidden="true" />
+            {isPending ? "Dreaming…" : "Dream now"}
           </button>
         ) : null}
       </div>

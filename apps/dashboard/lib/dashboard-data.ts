@@ -73,7 +73,10 @@ export async function loadProjectSettings(projectId: string): Promise<ProjectSet
       name: trigger.name,
       type: trigger.trigger_type,
       status: trigger.status,
-      lastRunAt: trigger.last_run_at
+      lastRunAt: trigger.last_run_at,
+      cadence: stringConfig(trigger.config, "cadence"),
+      intervalHours: numberConfig(trigger.config, "interval_hours"),
+      timezone: stringConfig(trigger.config, "timezone")
     })),
     preferences: {
       riskTolerance: bundle.preferences?.risk_tolerance || "medium",
@@ -81,6 +84,18 @@ export async function loadProjectSettings(projectId: string): Promise<ProjectSet
       notes: bundle.preferences?.notes || ""
     }
   };
+}
+
+function stringConfig(config: unknown, key: string): string | null {
+  if (!config || typeof config !== "object") return null;
+  const value = (config as Record<string, unknown>)[key];
+  return typeof value === "string" ? value : null;
+}
+
+function numberConfig(config: unknown, key: string): number | null {
+  if (!config || typeof config !== "object") return null;
+  const value = (config as Record<string, unknown>)[key];
+  return typeof value === "number" ? value : null;
 }
 
 export async function loadDashboardProjectWithMeta(projectId: string): Promise<MorningReviewProject | null> {

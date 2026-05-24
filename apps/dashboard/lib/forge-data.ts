@@ -183,7 +183,9 @@ function mapDigest(run: DbPipelineRun | undefined, opportunities: ContractOpport
   return {
     summary: typeof metadata.digest_summary === "string" ? metadata.digest_summary : "Morning review ready.",
     changes,
-    topRecommendation: opportunities[0]?.decision.summary
+    topRecommendation: opportunities[0]?.decision.summary,
+    reflectionProposalCount:
+      typeof metadata.reflection_proposal_count === "number" ? metadata.reflection_proposal_count : undefined
   };
 }
 

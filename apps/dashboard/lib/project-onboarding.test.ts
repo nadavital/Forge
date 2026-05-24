@@ -39,7 +39,8 @@ test("connected product onboarding creates manual, GitHub, feedback, and trigger
   assert.equal(defaults.sources.find((source) => source.source_type === "github")?.status, "active");
   assert.equal(defaults.sources.find((source) => source.source_type === "feedback_form")?.status, "paused");
   assert.equal(defaults.triggers.find((trigger) => trigger.trigger_type === "manual")?.status, "active");
-  assert.equal(defaults.triggers.find((trigger) => trigger.trigger_type === "schedule")?.status, "paused");
+  assert.equal(defaults.triggers.find((trigger) => trigger.trigger_type === "schedule")?.status, "active");
+  assert.equal(defaults.triggers.find((trigger) => trigger.trigger_type === "schedule")?.config?.interval_hours, 24);
 });
 
 test("checklist reports incomplete GitHub setup until a repo is connected", () => {

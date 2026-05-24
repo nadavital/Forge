@@ -28,7 +28,7 @@ export function SchedulerControl({ overview, projectId }: SchedulerControlProps)
           <CalendarClock aria-hidden="true" />
         </span>
         <div>
-          <h2>Workflow scheduler</h2>
+          <h2>Dream schedule</h2>
           <p>
             {overview.activeCount} active · {overview.dueCount} due
             {overview.lastRunAt ? ` · last run ${formatTime(overview.lastRunAt)}` : ""}
@@ -38,7 +38,7 @@ export function SchedulerControl({ overview, projectId }: SchedulerControlProps)
       </div>
       <button className="btn btn-secondary" disabled={isPending || overview.dueCount === 0} onClick={run} type="button">
         <Play aria-hidden="true" />
-        {isPending ? "Running..." : "Run due"}
+        {isPending ? "Dreaming..." : "Run due dreams"}
       </button>
     </section>
   );

@@ -89,6 +89,7 @@ export async function createProjectRecord(input: {
   markets?: string[];
   riskTolerance?: string;
   notes?: string;
+  scheduleCadence?: string;
 }): Promise<DbProject> {
   const now = new Date().toISOString();
   const defaults = buildProjectDefaults({
@@ -101,6 +102,7 @@ export async function createProjectRecord(input: {
     markets: input.markets,
     riskTolerance: input.riskTolerance,
     notes: input.notes,
+    scheduleCadence: input.scheduleCadence,
     now,
     idFactory: newId
   });
@@ -527,7 +529,7 @@ export async function updateProjectSettings(input: {
   project: Pick<DbProject, "repo_url" | "product_url" | "description">;
   preferences: Pick<DbUserPreference, "preferred_markets" | "risk_tolerance" | "notes">;
   sources: Array<Pick<DbSourceConfig, "id" | "status">>;
-  triggers: Array<Pick<DbTrigger, "id" | "status">>;
+  triggers: Array<Pick<DbTrigger, "id" | "status"> & { config?: JsonObject }>;
 }): Promise<void> {
   const githubPatch = githubSourcePatch(input.project.repo_url);
   const normalizedRepo = normalizeGithubRepository(input.project.repo_url);
@@ -574,7 +576,10 @@ export async function updateProjectSettings(input: {
       }
     }
     for (const trigger of input.triggers) {
-      await supabase.update("triggers", trigger.id, { status: trigger.status });
+      await supabase.update("triggers", trigger.id, {
+        status: trigger.status,
+        ...(trigger.config ? { config: trigger.config } : {})
+      });
     }
     return;
   }
@@ -615,7 +620,12 @@ export async function updateProjectSettings(input: {
     }
     for (const trigger of input.triggers) {
       const row = store.triggers.find((entry) => entry.id === trigger.id);
-      if (row) row.status = trigger.status;
+      if (row) {
+        row.status = trigger.status;
+        if (trigger.config) {
+          row.config = { ...(row.config ?? {}), ...trigger.config };
+        }
+      }
     }
   });
 }
