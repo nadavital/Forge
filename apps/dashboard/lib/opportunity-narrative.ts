@@ -15,6 +15,7 @@ export type OpportunityNarrative = {
   buildLinks?: Array<{ label: string; url: string }>;
   buildLogs?: string;
   artifacts?: Array<{ label: string; content: string }>;
+  buildSummary?: string;
 };
 
 export function buildOpportunityNarrative(opportunity: ContractOpportunity): OpportunityNarrative {
@@ -32,15 +33,27 @@ export function buildOpportunityNarrative(opportunity: ContractOpportunity): Opp
   let buildLine: string | undefined;
   let buildLinks: Array<{ label: string; url: string }> | undefined;
   let buildLogs: string | undefined;
+  let buildSummary: string | undefined;
   let artifacts: Array<{ label: string; content: string }> | undefined;
 
   if (opportunity.build) {
     if (opportunity.build.status === "completed") {
       buildLine = "Build complete.";
+      buildSummary = [
+        "Forge turned this approved opportunity into a reviewable implementation artifact.",
+        opportunity.build.prUrl ? "A pull request is ready for review." : "",
+        opportunity.build.logs?.includes("fallback") || opportunity.build.logs?.includes("timed out")
+          ? "The managed builder stalled, so Forge preserved the approved intent and created a transparent fallback PR."
+          : "The managed builder returned artifacts and Forge recorded the review contract."
+      ]
+        .filter(Boolean)
+        .join(" ");
     } else if (opportunity.build.status === "failed") {
       buildLine = "The last build attempt failed.";
+      buildSummary = "Forge recorded the failure so the next run can improve the build brief or fallback behavior.";
     } else {
       buildLine = `Build is ${opportunity.build.status.replace("_", " ")}.`;
+      buildSummary = "Forge is working through the managed build handoff. This page refreshes while the run is active.";
     }
 
     buildLogs = opportunity.build.logs ?? undefined;
@@ -76,6 +89,7 @@ export function buildOpportunityNarrative(opportunity: ContractOpportunity): Opp
     buildLine,
     buildLinks: buildLinks && buildLinks.length > 0 ? buildLinks : undefined,
     buildLogs,
+    buildSummary,
     artifacts
   };
 }

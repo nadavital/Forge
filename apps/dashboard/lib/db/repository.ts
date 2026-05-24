@@ -263,6 +263,28 @@ export async function replaceProjectDiscoveryRecords(input: {
 
   if (isSupabaseConfigured()) {
     const supabase = createSupabaseClient()!;
+    const oldOpportunities = await supabase.select<DbOpportunity>(
+      "opportunities",
+      `select=id&project_id=eq.${encodeURIComponent(input.projectId)}&pipeline_run_id=not.is.null`
+    );
+    const oldOpportunityIds = oldOpportunities.map((opportunity) => opportunity.id);
+    if (oldOpportunityIds.length > 0) {
+      const oldOpportunityFilter = `(${oldOpportunityIds.join(",")})`;
+      const oldBuilds = await supabase.select<DbMvpBuild>(
+        "mvp_builds",
+        `select=id&opportunity_id=in.${oldOpportunityFilter}`
+      );
+      const oldBuildIds = oldBuilds.map((build) => build.id);
+      if (oldBuildIds.length > 0) {
+        await supabase.delete("build_artifacts", `mvp_build_id=in.(${oldBuildIds.join(",")})`);
+        await supabase.delete("mvp_builds", `id=in.(${oldBuildIds.join(",")})`);
+      }
+      await supabase.delete("prototype_options", `opportunity_id=in.${oldOpportunityFilter}`);
+      await supabase.delete("opportunity_evaluations", `opportunity_id=in.${oldOpportunityFilter}`);
+      await supabase.delete("opportunity_signals", `opportunity_id=in.${oldOpportunityFilter}`);
+      await supabase.delete("opportunities", `id=in.${oldOpportunityFilter}`);
+    }
+    await supabase.delete("signals", `project_id=eq.${encodeURIComponent(input.projectId)}`);
     for (const signal of signalRows) await supabase.insert("signals", signal);
     for (const opportunity of opportunityRows) await supabase.insert("opportunities", opportunity);
     for (const link of links) await supabase.insert("opportunity_signals", link);
@@ -484,7 +506,7 @@ export async function createPipelineRun(projectId: string): Promise<DbPipelineRu
   const run: DbPipelineRun = {
     id: newId("run"),
     project_id: projectId,
-    run_type: "review",
+    run_type: "managed",
     status: "running",
     trigger: "manual",
     started_at: now,

@@ -23,4 +23,4 @@ def load_env_file(path: Path) -> None:
 def load_repo_env(start: Path) -> None:
     for directory in [start, *start.parents]:
         load_env_file(directory / ".env")
-
+    load_env_file(start / "apps" / "dashboard" / ".env.local")

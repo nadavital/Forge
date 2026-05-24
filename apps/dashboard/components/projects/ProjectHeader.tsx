@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { Settings2, Sparkles } from "lucide-react";
 import { runProjectPipeline } from "@/app/actions/pipeline";
@@ -24,6 +24,7 @@ export function ProjectHeader({
   opportunityCount = 0
 }: ProjectHeaderProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const onReview = pathname === `/projects/${projectId}`;
   const onSettings = pathname === `/projects/${projectId}/settings`;
@@ -31,6 +32,7 @@ export function ProjectHeader({
   function runAgain() {
     startTransition(async () => {
       await runProjectPipeline(projectId);
+      router.refresh();
     });
   }
 
@@ -40,10 +42,10 @@ export function ProjectHeader({
         <div className="project-header-copy">
           <h1>{projectName}</h1>
           <p className="project-subline">
-            {mode} · {signalCount} signals · {opportunityCount} suggestions
+            {mode} · {countLabel(signalCount, "signal")} · {countLabel(opportunityCount, "suggestion")}
           </p>
           <span className={isPending ? "dream-status active" : "dream-status"}>
-            {isPending ? "Dreaming now" : runStatus}
+            {isPending ? "Starting staged run: collect → research → Bull/Bear → synthesize" : runStatus}
           </span>
         </div>
 
@@ -70,4 +72,8 @@ export function ProjectHeader({
       </nav>
     </header>
   );
+}
+
+function countLabel(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }

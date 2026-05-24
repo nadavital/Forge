@@ -54,6 +54,26 @@ export type ContractOpportunity = {
 export type MorningDigest = {
   summary: string;
   changes: string[];
+  projectKnowledge?: {
+    summary: string;
+    frameworks: string[];
+    workflows: string[];
+    surfaces: Array<{
+      label: string;
+      evidenceFiles: string[];
+    }>;
+    evidenceCounts: {
+      filesSeen?: number;
+      issuesSeen?: number;
+      actionableIssues?: number;
+      surfacesDetected?: number;
+    };
+  };
+  stages?: Array<{
+    label: string;
+    status: "completed" | "running" | "waiting" | "failed" | "not_run";
+    detail: string;
+  }>;
   topRecommendation?: string;
   reflectionProposalCount?: number;
 };

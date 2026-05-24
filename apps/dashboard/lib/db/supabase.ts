@@ -4,6 +4,7 @@ type SupabaseClient = {
   select<T>(table: keyof ForgeStore, query: string): Promise<T[]>;
   insert<T extends JsonObject>(table: keyof ForgeStore, row: T): Promise<T>;
   update<T extends JsonObject>(table: keyof ForgeStore, id: string, patch: T, idColumn?: string): Promise<T>;
+  delete(table: keyof ForgeStore, query: string): Promise<void>;
 };
 
 export function createSupabaseClient(): SupabaseClient | null {
@@ -84,6 +85,21 @@ export function createSupabaseClient(): SupabaseClient | null {
         return payload[0] as T;
       }
       return patch;
+    },
+
+    async delete(table: keyof ForgeStore, query: string): Promise<void> {
+      const response = await fetch(`${url}/rest/v1/${table}?${query}`, {
+        method: "DELETE",
+        headers: {
+          apikey: key,
+          Authorization: `Bearer ${key}`
+        }
+      });
+
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(`Supabase delete failed for ${table}: ${response.status} ${body}`);
+      }
     }
   };
 }
