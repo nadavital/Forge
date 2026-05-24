@@ -294,9 +294,9 @@ function mapRunStages(run: DbPipelineRun, metadata: JsonObject): MorningDigest["
       detail: clustering
         ? countDetail(clustering, "clusters_saved_in_run_metadata", "candidate clusters ranked")
         : repoFastRun && opportunityCount > 0
-          ? `${opportunityCount} repo-derived recommendation${opportunityCount === 1 ? "" : "s"} created from the fast import.`
+          ? `${opportunityCount} model-backed recommendation${opportunityCount === 1 ? "" : "s"} created from repository evidence.`
         : repoFastRun
-          ? "No recommendation cards were created because the repo evidence was too thin."
+          ? "Project memory collected; recommendations wait for semantic discovery."
         : "Turns clustered opportunities into the next action."
     }
   ];

@@ -41,17 +41,17 @@ export async function triggerProjectPipeline(projectId: string): Promise<{ runId
       repo_url: discovery.repoUrl,
       digest_summary:
         discovery.opportunities.length > 0
-          ? `Analyzed ${discovery.projectName} and generated ${discovery.opportunities.length} repo-specific opportunities.`
-          : `Analyzed ${discovery.projectName}. Forge collected repo context but did not find enough evidence for a recommendation yet.`,
+          ? `Analyzed ${discovery.projectName} with semantic discovery and produced ${discovery.opportunities.length} evidence-backed opportunities.`
+          : `Analyzed ${discovery.projectName}. Forge collected project memory; recommendations are pending semantic discovery evidence.`,
       changes: [
         reflectionLine,
         `Collected ${discovery.signals.length} GitHub repo signals`,
         discovery.opportunities.length > 0
-          ? `Ranked ${discovery.opportunities.length} opportunities from README and issue context`
-          : "No recommendation cards were created because the repo evidence was too thin",
+          ? `Ranked ${discovery.opportunities.length} model-generated opportunities with repository evidence`
+          : "No recommendation cards were created without model-backed product reasoning",
         discovery.opportunities.length > 0
           ? "Build briefs will target the connected repository"
-          : "Add issues, notes, or run managed research to generate stronger opportunities"
+          : "Project memory is available; rerun Dream when semantic discovery is configured or evidence improves"
       ],
       reflection_proposal_count: reflection.proposalCount,
       reflection_run_ids: reflection.runIds,
@@ -63,7 +63,7 @@ export async function triggerProjectPipeline(projectId: string): Promise<{ runId
       message:
         discovery.opportunities.length > 0
           ? `Pipeline run completed for ${discovery.projectName}. Refresh to review repo-specific ideas.`
-          : `Pipeline run completed for ${discovery.projectName}. Forge needs more evidence before recommending ideas.`
+          : `Pipeline run completed for ${discovery.projectName}. Forge collected memory but did not create non-agentic recommendations.`
     };
   }
 
@@ -88,14 +88,14 @@ export async function triggerProjectPipeline(projectId: string): Promise<{ runId
     digest_summary:
       discovery.opportunities.length > 0
         ? `Generated ${discovery.opportunities.length} new-product direction${discovery.opportunities.length === 1 ? "" : "s"} from explicit project context.`
-        : "Collected project context. Forge needs concrete notes, feedback, or research evidence before recommending ideas.",
+        : "Collected project context. Recommendations require model-backed discovery, not seeded templates.",
     changes: [
       reflectionLine,
       `Collected ${discovery.signals.length} project context signals`,
       discovery.opportunities.length > 0
         ? `Ranked ${discovery.opportunities.length} manually grounded idea${discovery.opportunities.length === 1 ? "" : "s"} for review`
-        : "No recommendation cards were created because no concrete product evidence was supplied",
-      "Forge will not show seeded placeholder opportunities as recommendations"
+        : "No recommendation cards were created from hardcoded templates",
+      "Forge only stores the supplied context until an agent creates recommendations"
     ],
     reflection_proposal_count: reflection.proposalCount,
     reflection_run_ids: reflection.runIds
@@ -103,7 +103,7 @@ export async function triggerProjectPipeline(projectId: string): Promise<{ runId
 
   return {
     runId: run.id,
-    message: "Pipeline run completed. Refresh to review generated product ideas."
+    message: "Pipeline run completed. Refresh to review collected project context."
   };
 }
 

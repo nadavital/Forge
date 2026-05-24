@@ -97,7 +97,7 @@ export async function discoverGitHubRepo(repoUrl: string): Promise<RepoDiscovery
     ...issueSignals
   ];
 
-  const opportunities = synthesizeRepoOpportunities({
+  const semanticDiscovery = await runSemanticRepoDiscovery({
     repo,
     readme,
     issues,
@@ -109,22 +109,19 @@ export async function discoverGitHubRepo(repoUrl: string): Promise<RepoDiscovery
     repoUrl: repo.html_url,
     projectName: repo.full_name,
     productContext: productText || repo.description || repo.full_name,
-    knowledge: buildProjectKnowledge(repo, readme, issues, tree),
+    knowledge: semanticDiscovery.knowledge ?? buildFallbackProjectKnowledge(repo, readme, issues, tree),
     signals,
-    opportunities
+    opportunities: semanticDiscovery.opportunities
   };
 }
 
-function buildProjectKnowledge(
+function buildFallbackProjectKnowledge(
   repo: GitHubRepo,
   readme: string,
   issues: GitHubIssue[],
   tree: GitHubTreeEntry[]
 ): JsonObject {
   const files = tree.filter((entry) => entry.type === "blob").map((entry) => entry.path);
-  const surfaces = detectRepoSurfaces(files, readme);
-  const frameworks = detectFrameworks(files, readme);
-  const workflows = surfaces.map((surface) => surface.label);
   const activeIssues = actionableIssues(issues).slice(0, 5);
 
   return {
@@ -133,19 +130,15 @@ function buildProjectKnowledge(
     description: repo.description,
     primary_language: repo.language,
     topics: repo.topics ?? [],
-    semantic_summary: summarizeProject(repo, readme, frameworks, workflows),
-    frameworks,
-    app_surfaces: surfaces.slice(0, 8).map((surface) => ({
-      id: surface.id,
-      label: surface.label,
-      evidence_files: surface.files.slice(0, 10)
-    })),
-    product_workflows: workflows.slice(0, 8),
+    semantic_summary: `Forge collected repository context for ${repo.full_name}. Semantic recommendations are pending model analysis.`,
+    frameworks: repo.language ? [repo.language] : [],
+    app_surfaces: [],
+    product_workflows: [],
     evidence_counts: {
       files_seen: files.length,
       issues_seen: issues.filter((issue) => !issue.pull_request).length,
       actionable_issues: activeIssues.length,
-      surfaces_detected: surfaces.length
+      surfaces_detected: 0
     },
     recent_repo_signals: activeIssues.map((issue) => ({
       issue_number: issue.number,
@@ -156,60 +149,27 @@ function buildProjectKnowledge(
   };
 }
 
-function summarizeProject(
-  repo: GitHubRepo,
-  readme: string,
-  frameworks: string[],
-  workflows: string[]
-): string {
-  const readmeLine = readmeEvidenceLine(readme);
-  const frameworkLine = frameworks.length > 0 ? `${frameworks.slice(0, 3).join(", ")} app` : "software project";
-  const workflowLine = workflows.length > 0 ? ` with ${workflows.slice(0, 3).join(", ")} surfaces` : "";
-  return compact(`${repo.full_name} appears to be a ${frameworkLine}${workflowLine}. ${readmeLine || repo.description || ""}`, 360);
-}
-
-function detectFrameworks(files: string[], readme: string): string[] {
-  const evidence = `${files.join("\n")}\n${readme}`.toLowerCase();
-  const frameworks: Array<[string, string[]]> = [
-    ["SwiftUI", ["swiftui", ".xcodeproj", "package.swift"]],
-    ["iOS", ["ios", ".xcodeproj", "appdelegate", "scenedelegate", "widget"]],
-    ["Next.js", ["next.config", "app/page.tsx", "pages/", "next dev"]],
-    ["React", ["react", "jsx", "tsx", "vite.config"]],
-    ["Python", ["requirements.txt", "pyproject.toml", ".py"]],
-    ["Supabase", ["supabase", "postgres", "rls"]]
-  ];
-
-  return frameworks
-    .filter(([, terms]) => terms.some((term) => evidence.includes(term)))
-    .map(([name]) => name);
-}
-
-function synthesizeRepoOpportunities(input: {
+async function runSemanticRepoDiscovery(input: {
   repo: GitHubRepo;
   readme: string;
   issues: GitHubIssue[];
   tree: GitHubTreeEntry[];
   signals: Array<Omit<DbSignal, "id" | "project_id">>;
-}): RepoDiscoveryResult["opportunities"] {
-  const repoSignalIndex = 0;
-  const issueIndexes = input.signals.map((_, index) => index).slice(1);
-  const opportunities = actionableIssues(input.issues)
-    .slice(0, 4)
-    .map((issue) => {
-      const signalIndex = issueIndexes.find((index) => input.signals[index]?.url === issue.html_url);
-      return issueDerivedOpportunity(input.repo, issue, [
-        repoSignalIndex,
-        ...(signalIndex ? [signalIndex] : [])
-      ]);
-    });
-
-  if (opportunities.length === 0) {
-    opportunities.push(...repoSurfaceOpportunities(input.repo, input.readme, input.tree, repoSignalIndex));
+}): Promise<{ knowledge: JsonObject | null; opportunities: RepoDiscoveryResult["opportunities"] }> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return { knowledge: null, opportunities: [] };
   }
 
-  return dedupeOpportunities(opportunities)
-    .sort((a, b) => Number(b.score ?? 0) - Number(a.score ?? 0))
-    .slice(0, 4);
+  try {
+    const payload = await callGeminiJson(apiKey, repoSemanticPrompt(input));
+    const knowledge = normalizeKnowledge(payload.project_knowledge, input);
+    const opportunities = normalizeOpportunities(payload.opportunities, input);
+    return { knowledge, opportunities };
+  } catch (error) {
+    console.warn("Gemini repo semantic discovery failed", error);
+    return { knowledge: null, opportunities: [] };
+  }
 }
 
 function actionableIssues(issues: GitHubIssue[]): GitHubIssue[] {
@@ -227,201 +187,226 @@ function issueEvidenceScore(issue: GitHubIssue): number {
   return (issue.body?.trim().length ?? 0) / 120 + (issue.labels?.length ?? 0) * 2 + issue.comments * 3;
 }
 
-function issueDerivedOpportunity(
-  repo: GitHubRepo,
-  issue: GitHubIssue,
-  signalIndexes: number[]
-): RepoDiscoveryResult["opportunities"][number] {
-  const labels = issue.labels?.map((label) => label.name).filter(Boolean) ?? [];
-  const evidenceSummary = compact(issue.body?.trim() || issue.title, 360);
-  const labelSummary = labels.length > 0 ? ` Labels: ${labels.join(", ")}.` : "";
-  const commentSummary = issue.comments > 0 ? ` ${issue.comments} comment${issue.comments === 1 ? "" : "s"} on the issue.` : "";
+function repoSemanticPrompt(input: {
+  repo: GitHubRepo;
+  readme: string;
+  issues: GitHubIssue[];
+  tree: GitHubTreeEntry[];
+}): string {
+  const files = input.tree
+    .filter((entry) => entry.type === "blob")
+    .map((entry) => entry.path)
+    .slice(0, 260);
+  const issues = input.issues
+    .filter((issue) => !issue.pull_request)
+    .slice(0, 12)
+    .map((issue) => ({
+      number: issue.number,
+      title: issue.title,
+      body: compact(issue.body ?? "", 500),
+      labels: issue.labels?.map((label) => label.name).filter(Boolean) ?? [],
+      comments: issue.comments,
+      url: issue.html_url
+    }));
 
-  return makeOpportunity({
-    title: `Address #${issue.number}: ${compact(issue.title, 82)}`,
-    problem: `${repo.name} has a concrete repo signal in issue #${issue.number}: ${evidenceSummary}${labelSummary}${commentSummary}`,
-    targetUser: "Developers and maintainers working with this repository",
-    mvpConcept: `Implement the smallest reviewable change that resolves or materially advances issue #${issue.number}: ${compact(issue.title, 120)}.`,
-    score: Math.min(90, 64 + Math.round(issueEvidenceScore(issue))),
-    rationale: `Created from GitHub issue #${issue.number}, not from a generic repository template.`,
-    signalIndexes,
-    profile: {
-      origin: "github_issue",
-      repo: repo.full_name,
-      issue_number: issue.number,
-      issue_url: issue.html_url,
-      labels
+  return `You are Forge's product intelligence agent. Analyze the connected repository and produce project-specific product understanding plus buildable product opportunities.
+
+Rules:
+- Do not use generic app categories or canned recommendations.
+- Infer the product only from the supplied README, repository files, and issues.
+- If the evidence is not enough to recommend real work, return an empty opportunities array.
+- Each opportunity must cite concrete evidence file paths or issue URLs from the input.
+- Recommendations must be product/user improvements, not code chores, unless the repo evidence clearly says developer setup is the product problem.
+- Return only valid JSON with this shape:
+{
+  "project_knowledge": {
+    "semantic_summary": "one concise sentence about what this product is",
+    "frameworks": ["framework or platform names inferred from evidence"],
+    "product_workflows": ["human-readable workflows inferred from evidence"],
+    "app_surfaces": [{"label":"workflow/surface name","evidence_files":["path"]}],
+    "uncertainty": "brief note about limits of the evidence"
+  },
+  "opportunities": [
+    {
+      "title": "specific product improvement",
+      "problem": "user problem grounded in evidence",
+      "target_user": "specific user",
+      "mvp_concept": "small reviewable implementation",
+      "score": 0.0,
+      "score_rationale": "why this is worth doing, citing evidence",
+      "evidence_files": ["path"],
+      "evidence_urls": ["url"]
     }
-  });
+  ]
 }
 
-function repoSurfaceOpportunities(
-  repo: GitHubRepo,
-  readme: string,
-  tree: GitHubTreeEntry[],
-  repoSignalIndex: number
-): RepoDiscoveryResult["opportunities"] {
-  const files = tree.filter((entry) => entry.type === "blob").map((entry) => entry.path);
-  const surfaces = detectRepoSurfaces(files, readme);
-  const readmeEvidence = readmeEvidenceLine(readme);
+Repository:
+${JSON.stringify(
+  {
+    name: input.repo.name,
+    full_name: input.repo.full_name,
+    description: input.repo.description,
+    language: input.repo.language,
+    topics: input.repo.topics ?? [],
+    readme: compact(input.readme, 5000),
+    files,
+    issues
+  },
+  null,
+  2
+)}`;
+}
 
-  return surfaces.slice(0, 3).map((surface) =>
-    makeOpportunity({
-      title: `${surface.title} in ${repo.name}`,
-      problem: `${repo.name} has an active ${surface.label} workflow that looks important to the user experience.${readmeEvidence ? ` README context: ${readmeEvidence}` : ""}`,
-      targetUser: surface.targetUser,
-      mvpConcept: surface.mvpConcept(repo.name),
-      score: surface.score,
-      rationale: surface.rationale(),
-      signalIndexes: [repoSignalIndex],
-      profile: {
-        origin: "repo_surface",
-        repo: repo.full_name,
-        surface: surface.id,
-        evidence_files: surface.files.slice(0, 12)
-      }
-    })
+async function callGeminiJson(apiKey: string, prompt: string): Promise<JsonObject> {
+  const model = process.env.FORGE_GEMINI_DISCOVERY_MODEL || "gemini-2.5-flash";
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.2,
+          responseMimeType: "application/json"
+        }
+      })
+    }
   );
-}
 
-function detectRepoSurfaces(files: string[], readme: string) {
-  const text = `${files.join("\n")}\n${readme}`.toLowerCase();
-  const candidates = [
-    {
-      id: "recipe_library",
-      label: "recipe library",
-      title: "Make saved recipes easier to revisit",
-      terms: ["recipe", "library", "collection", "cookbook", "savedrecipe", "recipedetail"],
-      targetUser: "Home cooks returning to saved recipes and collections",
-      mvpConcept: (repoName: string) =>
-        `Improve one saved-recipe flow in ${repoName}: faster rediscovery, clearer recipe context, or a better path from collection to cooking.`,
-      rationale: () => "The repo has recipe library and collection surfaces, so Forge can improve how users return to saved cooking ideas.",
-      score: 88
-    },
-    {
-      id: "cook_mode",
-      label: "cooking flow",
-      title: "Improve the active cooking flow",
-      terms: ["cookmode", "cooking", "cook", "ingredient", "instruction", "step", "timer"],
-      targetUser: "Users cooking from a recipe in the kitchen",
-      mvpConcept: (repoName: string) =>
-        `Improve one active cooking flow in ${repoName} so the user can see the current step, ingredients, and next action with less friction.`,
-      rationale: () => "The repo contains cooking-mode or recipe-step surfaces, which are strong candidates for an active-use improvement.",
-      score: 87
-    },
-    {
-      id: "recipe_generation",
-      label: "recipe generation",
-      title: "Make generated recipes easier to trust",
-      terms: ["airecipe", "generator", "generate", "ai", "recommendation", "suggestion"],
-      targetUser: "Users asking the app to create or adapt recipes",
-      mvpConcept: (repoName: string) =>
-        `Add transparency around one generated recipe workflow in ${repoName}: why it was suggested, what constraints shaped it, and how to adjust it.`,
-      rationale: () => "The app appears to generate recipes, so trust, constraints, and editability are high-leverage product improvements.",
-      score: 86
-    },
-    {
-      id: "onboarding",
-      label: "onboarding and first-run",
-      title: "Improve first-run activation",
-      terms: ["onboarding", "signup", "login", "auth", "welcome", "tutorial", "firstlaunch", "paywall"],
-      targetUser: "New users opening the app for the first time",
-      mvpConcept: (repoName: string) =>
-        `Add a reviewable first-run improvement for ${repoName}: clearer setup state, progress feedback, or a guided empty-state path using the existing onboarding files.`,
-      rationale: () => "The repo contains onboarding/auth surfaces, so the next useful improvement is likely reducing first-run friction.",
-      score: 84
-    },
-    {
-      id: "planning",
-      label: "planning and generation",
-      title: "Make generated plans easier to trust",
-      terms: ["plan", "planner", "workoutplan", "trainingplan", "gemini", "recommendation", "schedule", "routine"],
-      targetUser: "Users relying on generated app recommendations or plans",
-      mvpConcept: (repoName: string) =>
-        `Add transparency around one generated ${repoName} workflow: show why the result was created, what inputs affected it, and how to regenerate or adjust it.`,
-      rationale: () => "The app appears to generate plans or recommendations, so trust and editability are high-leverage product improvements.",
-      score: 86
-    },
-    {
-      id: "tracking",
-      label: "tracking and progress",
-      title: "Strengthen progress feedback",
-      terms: ["progress", "history", "stats", "analytics", "tracker", "tracking", "streak", "chart"],
-      targetUser: "Returning users checking whether the product is helping them improve",
-      mvpConcept: (repoName: string) =>
-        `Build a small progress review surface in ${repoName} using existing tracked data, with one clear trend and one suggested next action.`,
-      rationale: () => "The repo contains progress/history surfaces, so Forge can improve the returning-user feedback loop.",
-      score: 82
-    },
-    {
-      id: "workout",
-      label: "workout and activity",
-      title: "Tighten the live activity loop",
-      terms: ["workout", "exercise", "livetraining", "liveworkout", "training", "reps", "muscle"],
-      targetUser: "Users actively logging or following activity inside the app",
-      mvpConcept: (repoName: string) =>
-        `Improve one active-use ${repoName} flow so the user can see current state, next step, and completion outcome without leaving the main activity screen.`,
-      rationale: () => "The repo has a live workout/activity workflow, which is a good candidate for a focused usability improvement.",
-      score: 88
-    },
-    {
-      id: "nutrition",
-      label: "nutrition and logging",
-      title: "Clarify food logging outcomes",
-      terms: ["food", "meal", "nutrition", "calorie", "macro", "protein", "carb", "fat"],
-      targetUser: "Users logging nutrition or reviewing meal decisions",
-      mvpConcept: (repoName: string) =>
-        `Improve a nutrition logging or review flow in ${repoName} with clearer post-log feedback and one practical next suggestion.`,
-      rationale: () => "The repo has nutrition logging surfaces, so the opportunity is to make post-log feedback more immediately useful.",
-      score: 85
-    },
-    {
-      id: "widgets",
-      label: "widget and shortcut",
-      title: "Expose the fastest return path",
-      terms: ["widget", "shortcut", "intent", "liveactivity", "notification", "deeplink"],
-      targetUser: "Returning users who need fast access outside the main app",
-      mvpConcept: (repoName: string) =>
-        `Add or improve one ${repoName} shortcut/widget return path that lands users directly in the relevant active workflow.`,
-      rationale: () => "The repo includes widgets, intents, or shortcuts, so Forge can improve the fastest return path for repeat use.",
-      score: 80
-    }
-  ];
-
-  return candidates
-    .map((candidate) => {
-      const matchedFiles = files.filter((file) => includesAny(file, candidate.terms));
-      const readmeHits = candidate.terms.filter((term) => tokenIncludes(text, term));
-      return {
-        ...candidate,
-        files: matchedFiles,
-        evidenceScore: matchedFiles.length * 3 + readmeHits.length
-      };
-    })
-    .filter((candidate) => candidate.evidenceScore >= 3 && candidate.files.length > 0)
-    .sort((a, b) => b.evidenceScore - a.evidenceScore);
-}
-
-function readmeEvidenceLine(readme: string): string {
-  const line = readme
-    .split(/\n+/)
-    .map((entry) => entry.replace(/^#+\s*/, "").trim())
-    .find((entry) => entry.length >= 40 && entry.length <= 220);
-  return line ? compact(line, 180) : "";
-}
-
-function includesAny(text: string, terms: string[]): boolean {
-  return terms.some((term) => tokenIncludes(text, term));
-}
-
-function tokenIncludes(text: string, term: string): boolean {
-  const normalizedText = text.toLowerCase();
-  const normalizedTerm = term.toLowerCase();
-  if (normalizedTerm.length <= 3) {
-    const tokens = normalizedText.split(/[^a-z0-9]+/).filter(Boolean);
-    return tokens.includes(normalizedTerm);
+  const body = await response.text();
+  if (!response.ok) {
+    throw new Error(`Gemini discovery failed: ${response.status} ${body.slice(0, 300)}`);
   }
-  return normalizedText.includes(normalizedTerm);
+
+  const payload = JSON.parse(body) as JsonObject;
+  const text = extractGeminiText(payload);
+  return JSON.parse(text) as JsonObject;
+}
+
+function extractGeminiText(payload: JsonObject): string {
+  const candidates = Array.isArray(payload.candidates) ? payload.candidates : [];
+  const first = candidates[0];
+  if (!first || typeof first !== "object") {
+    throw new Error("Gemini response did not include candidates.");
+  }
+  const content = (first as JsonObject).content;
+  const parts =
+    content && typeof content === "object" && Array.isArray((content as JsonObject).parts)
+      ? ((content as JsonObject).parts as unknown[])
+      : [];
+  const text = parts
+    .map((part) => (part && typeof part === "object" ? (part as JsonObject).text : null))
+    .filter((part): part is string => typeof part === "string")
+    .join("\n")
+    .trim();
+  if (!text) {
+    throw new Error("Gemini response did not include text.");
+  }
+  return text;
+}
+
+function normalizeKnowledge(
+  value: unknown,
+  input: { repo: GitHubRepo; issues: GitHubIssue[]; tree: GitHubTreeEntry[] }
+): JsonObject {
+  const knowledge = value && typeof value === "object" && !Array.isArray(value) ? (value as JsonObject) : {};
+  const filesSeen = input.tree.filter((entry) => entry.type === "blob").length;
+  const appSurfaces = Array.isArray(knowledge.app_surfaces)
+    ? knowledge.app_surfaces
+        .map((surface) => (surface && typeof surface === "object" ? (surface as JsonObject) : null))
+        .filter((surface): surface is JsonObject => Boolean(surface))
+        .map((surface) => ({
+          label: cleanString(surface.label) || "Detected surface",
+          evidence_files: stringArray(surface.evidence_files).slice(0, 8)
+        }))
+        .slice(0, 8)
+    : [];
+
+  return {
+    repo: input.repo.full_name,
+    repo_url: input.repo.html_url,
+    description: input.repo.description,
+    primary_language: input.repo.language,
+    topics: input.repo.topics ?? [],
+    semantic_summary:
+      cleanString(knowledge.semantic_summary) ||
+      `Forge collected repository context for ${input.repo.full_name}. Semantic recommendations are pending model analysis.`,
+    frameworks: stringArray(knowledge.frameworks),
+    app_surfaces: appSurfaces,
+    product_workflows: stringArray(knowledge.product_workflows).slice(0, 8),
+    uncertainty: cleanString(knowledge.uncertainty),
+    evidence_counts: {
+      files_seen: filesSeen,
+      issues_seen: input.issues.filter((issue) => !issue.pull_request).length,
+      actionable_issues: actionableIssues(input.issues).length,
+      surfaces_detected: appSurfaces.length
+    },
+    recent_repo_signals: actionableIssues(input.issues)
+      .slice(0, 5)
+      .map((issue) => ({
+        issue_number: issue.number,
+        title: issue.title,
+        url: issue.html_url
+      })),
+    updated_at: new Date().toISOString()
+  };
+}
+
+function normalizeOpportunities(
+  value: unknown,
+  input: {
+    repo: GitHubRepo;
+    signals: Array<Omit<DbSignal, "id" | "project_id">>;
+  }
+): RepoDiscoveryResult["opportunities"] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((entry) => (entry && typeof entry === "object" ? (entry as JsonObject) : null))
+    .filter((entry): entry is JsonObject => Boolean(entry))
+    .map((entry) => {
+      const evidenceUrls = stringArray(entry.evidence_urls);
+      const evidenceFiles = stringArray(entry.evidence_files);
+      const linkedSignalIndexes = input.signals
+        .map((signal, index) => ({ signal, index }))
+        .filter(({ index, signal }) => index === 0 || Boolean(signal.url && evidenceUrls.includes(signal.url)))
+        .map(({ index }) => index);
+
+      return makeOpportunity({
+        title: cleanString(entry.title),
+        problem: cleanString(entry.problem),
+        targetUser: cleanString(entry.target_user),
+        mvpConcept: cleanString(entry.mvp_concept),
+        score: normalizeModelScore(entry.score),
+        rationale: cleanString(entry.score_rationale),
+        signalIndexes: linkedSignalIndexes.length > 0 ? linkedSignalIndexes : [0],
+        profile: {
+          origin: "gemini_semantic_discovery",
+          repo: input.repo.full_name,
+          evidence_files: evidenceFiles,
+          evidence_urls: evidenceUrls
+        }
+      });
+    })
+    .filter((opportunity) => opportunity.title && opportunity.problem && opportunity.mvp_concept)
+    .slice(0, 4);
+}
+
+function cleanString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
+}
+
+function normalizeModelScore(value: unknown): number {
+  const score = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(score)) return 70;
+  return score <= 1 ? Math.round(score * 100) : Math.round(score);
 }
 
 function makeOpportunity(input: {
@@ -447,18 +432,8 @@ function makeOpportunity(input: {
     evaluations: [
       {
         evaluator: "taste_critic",
-        content: "Repo-derived evidence: the MVP is tied to a concrete GitHub issue and avoids paid or production dependencies.",
-        scores: { usefulness: 0.82, coherence: 0.84, differentiation: 0.72 }
-      },
-      {
-        evaluator: "bull",
-        content: "The linked issue supplies enough context to create a concrete workflow improvement instead of a generic example.",
-        scores: {}
-      },
-      {
-        evaluator: "bear",
-        content: "Issue volume may be thin, so the first demo should treat this as a prototype direction rather than market proof.",
-        scores: {}
+        content: input.rationale,
+        scores: { source: "gemini_semantic_discovery" }
       },
       {
         evaluator: "decision_agent",
