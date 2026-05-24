@@ -1736,6 +1736,17 @@ dt {
   text-align: center;
 }
 
+.empty-panel-primary {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  min-height: 360px;
+  align-content: center;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(66, 133, 244, 0.13), transparent 38%),
+    rgba(255, 255, 255, 0.78);
+}
+
 .empty-panel h2 {
   font-family: var(--font-display), "Roboto Flex", Roboto, system-ui, sans-serif;
   font-size: 24px;
@@ -1745,6 +1756,10 @@ dt {
 .empty-panel p {
   margin-top: 8px;
   color: var(--muted);
+}
+
+.empty-panel-primary p {
+  max-width: 520px;
 }
 
 .empty-panel .btn {
