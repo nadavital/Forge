@@ -546,6 +546,27 @@ export async function completePipelineRun(runId: string, metadata: JsonObject): 
   });
 }
 
+export async function failPipelineRun(runId: string, metadata: JsonObject): Promise<void> {
+  const patch = {
+    status: "failed",
+    completed_at: new Date().toISOString(),
+    metadata
+  };
+
+  if (isSupabaseConfigured()) {
+    const supabase = createSupabaseClient()!;
+    await supabase.update("pipeline_runs", runId, patch);
+    return;
+  }
+
+  await mutateStore((store) => {
+    const run = store.pipeline_runs.find((row) => row.id === runId);
+    if (run) {
+      Object.assign(run, patch);
+    }
+  });
+}
+
 export async function updateProjectSettings(input: {
   projectId: string;
   project: Pick<DbProject, "repo_url" | "product_url" | "description">;

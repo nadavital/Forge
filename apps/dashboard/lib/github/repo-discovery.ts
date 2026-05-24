@@ -158,18 +158,13 @@ async function runSemanticRepoDiscovery(input: {
 }): Promise<{ knowledge: JsonObject | null; opportunities: RepoDiscoveryResult["opportunities"] }> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    return { knowledge: null, opportunities: [] };
+    throw new Error("GEMINI_API_KEY is required for Forge semantic discovery.");
   }
 
-  try {
-    const payload = await callGeminiJson(apiKey, repoSemanticPrompt(input));
-    const knowledge = normalizeKnowledge(payload.project_knowledge, input);
-    const opportunities = normalizeOpportunities(payload.opportunities, input);
-    return { knowledge, opportunities };
-  } catch (error) {
-    console.warn("Gemini repo semantic discovery failed", error);
-    return { knowledge: null, opportunities: [] };
-  }
+  const payload = await callGeminiJson(apiKey, repoSemanticPrompt(input));
+  const knowledge = normalizeKnowledge(payload.project_knowledge, input);
+  const opportunities = normalizeOpportunities(payload.opportunities, input);
+  return { knowledge, opportunities };
 }
 
 function actionableIssues(issues: GitHubIssue[]): GitHubIssue[] {

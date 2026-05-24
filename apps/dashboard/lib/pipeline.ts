@@ -1,6 +1,7 @@
 import {
   completePipelineRun,
   createPipelineRun,
+  failPipelineRun,
   getProjectBundle,
   replaceProjectDiscoveryRecords,
   updateProjectRepository
@@ -18,53 +19,65 @@ export async function triggerProjectPipeline(projectId: string): Promise<{ runId
   const reflectionLine = `Reflected on prior decisions and generated ${reflection.proposalCount} self-improvement proposal${reflection.proposalCount === 1 ? "" : "s"}`;
 
   if (repoUrl) {
-    const discovery = await discoverGitHubRepo(repoUrl);
-    await updateProjectRepository({
-      projectId,
-      repoUrl: discovery.repoUrl,
-      productContext: discovery.productContext
-    });
-    await replaceProjectDiscoveryRecords({
-      projectId,
-      runId: run.id,
-      signals: discovery.signals,
-      opportunities: rankOpportunitiesWithPreferences({
-        opportunities: discovery.opportunities,
-        existingOpportunities: bundle.opportunities,
-        preferenceEvents: bundle.preferenceEvents,
-        preferences: bundle.preferences
-      })
-    });
+    try {
+      const discovery = await discoverGitHubRepo(repoUrl);
+      await updateProjectRepository({
+        projectId,
+        repoUrl: discovery.repoUrl,
+        productContext: discovery.productContext
+      });
+      await replaceProjectDiscoveryRecords({
+        projectId,
+        runId: run.id,
+        signals: discovery.signals,
+        opportunities: rankOpportunitiesWithPreferences({
+          opportunities: discovery.opportunities,
+          existingOpportunities: bundle.opportunities,
+          preferenceEvents: bundle.preferenceEvents,
+          preferences: bundle.preferences
+        })
+      });
 
-    await completePipelineRun(run.id, {
-      source: "github",
-      repo_url: discovery.repoUrl,
-      digest_summary:
-        discovery.opportunities.length > 0
-          ? `Analyzed ${discovery.projectName} with semantic discovery and produced ${discovery.opportunities.length} evidence-backed opportunities.`
-          : `Analyzed ${discovery.projectName}. Forge collected project memory; recommendations are pending semantic discovery evidence.`,
-      changes: [
-        reflectionLine,
-        `Collected ${discovery.signals.length} GitHub repo signals`,
-        discovery.opportunities.length > 0
-          ? `Ranked ${discovery.opportunities.length} model-generated opportunities with repository evidence`
-          : "No recommendation cards were created without model-backed product reasoning",
-        discovery.opportunities.length > 0
-          ? "Build briefs will target the connected repository"
-          : "Project memory is available; rerun Dream when semantic discovery is configured or evidence improves"
-      ],
-      reflection_proposal_count: reflection.proposalCount,
-      reflection_run_ids: reflection.runIds,
-      project_knowledge: discovery.knowledge
-    });
+      await completePipelineRun(run.id, {
+        source: "github",
+        repo_url: discovery.repoUrl,
+        digest_summary:
+          discovery.opportunities.length > 0
+            ? `Analyzed ${discovery.projectName} with semantic discovery and produced ${discovery.opportunities.length} evidence-backed opportunities.`
+            : `Analyzed ${discovery.projectName}. Forge collected project memory; recommendations are pending semantic discovery evidence.`,
+        changes: [
+          reflectionLine,
+          `Collected ${discovery.signals.length} GitHub repo signals`,
+          discovery.opportunities.length > 0
+            ? `Ranked ${discovery.opportunities.length} model-generated opportunities with repository evidence`
+            : "No recommendation cards were created without model-backed product reasoning",
+          discovery.opportunities.length > 0
+            ? "Build briefs will target the connected repository"
+            : "Project memory is available; rerun Dream when semantic discovery is configured or evidence improves"
+        ],
+        reflection_proposal_count: reflection.proposalCount,
+        reflection_run_ids: reflection.runIds,
+        project_knowledge: discovery.knowledge
+      });
 
-    return {
-      runId: run.id,
-      message:
-        discovery.opportunities.length > 0
-          ? `Pipeline run completed for ${discovery.projectName}. Refresh to review repo-specific ideas.`
-          : `Pipeline run completed for ${discovery.projectName}. Forge collected memory but did not create non-agentic recommendations.`
-    };
+      return {
+        runId: run.id,
+        message:
+          discovery.opportunities.length > 0
+            ? `Pipeline run completed for ${discovery.projectName}. Refresh to review repo-specific ideas.`
+            : `Pipeline run completed for ${discovery.projectName}. Forge collected memory but did not create non-agentic recommendations.`
+      };
+    } catch (error) {
+      await failPipelineRun(run.id, {
+        source: "github",
+        repo_url: repoUrl,
+        digest_summary: "Dream failed before semantic recommendations were created.",
+        error: error instanceof Error ? error.message : String(error),
+        reflection_proposal_count: reflection.proposalCount,
+        reflection_run_ids: reflection.runIds
+      });
+      throw error;
+    }
   }
 
   const discovery = discoverNewProductIdeas({

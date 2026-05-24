@@ -12,7 +12,7 @@ export function NewProjectForm() {
       const repoUrl = String(formData.get("repoUrl") ?? "");
       await createProject({
         name: String(formData.get("name") ?? ""),
-        mode: repoUrl.trim() ? "connected_product" : "new_product",
+        mode: "connected_product",
         repoUrl,
         productUrl: String(formData.get("productUrl") ?? ""),
         description: String(formData.get("description") ?? ""),
@@ -42,11 +42,10 @@ export function NewProjectForm() {
           />
 
           <label className="field-label" htmlFor="repoUrl">
-            Existing GitHub repository optional
+            GitHub repository
           </label>
           <p className="field-help">
-            Connect a repo if you already have a product. Leave this blank for a new-product idea; Forge will create a
-            generated repo when you approve a build.
+            Connect an existing repo, or leave this blank and Forge will create a private GitHub repo for this project now.
           </p>
           <div className="field-with-icon">
             <GitBranch aria-hidden="true" />
@@ -56,7 +55,7 @@ export function NewProjectForm() {
               disabled={isPending}
               id="repoUrl"
               name="repoUrl"
-              placeholder="Optional: nadavital/forge or https://github.com/org/repo"
+              placeholder="nadavital/forge or https://github.com/org/repo"
             />
           </div>
 
@@ -144,7 +143,7 @@ export function NewProjectForm() {
           />
         </div>
         <button className="btn btn-primary btn-wide" disabled={isPending} type="submit">
-          {isPending ? "Creating…" : "Create project"}
+          {isPending ? "Creating project and repo…" : "Create project"}
         </button>
       </section>
     </form>

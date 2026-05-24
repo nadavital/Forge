@@ -36,8 +36,8 @@ export default async function HomePage() {
         <section className="empty-panel empty-panel-primary">
           <h2>No projects yet</h2>
           <p>
-            Start with an existing GitHub repo or a new product idea. If you leave GitHub blank, Forge will create a
-            generated repo later when you approve a build.
+            Start with an existing GitHub repo or a new product idea. If you leave GitHub blank, Forge creates a private
+            repo for the project during setup.
           </p>
           <Link className="btn btn-primary" href="/projects/new">
             <Plus aria-hidden="true" />
