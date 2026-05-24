@@ -18,12 +18,21 @@ export function ProjectSettingsForm({ projectId, settings }: ProjectSettingsForm
     startTransition(async () => {
       const sourceStatuses: Record<string, string> = {};
       const triggerStatuses: Record<string, string> = {};
+      const triggerConfigs: Record<string, { cadence: string; intervalHours: number; timezone: string }> = {};
 
       for (const source of settings.sources) {
         sourceStatuses[source.id] = String(formData.get(`source-${source.id}`) ?? source.status);
       }
       for (const trigger of settings.triggers) {
         triggerStatuses[trigger.id] = String(formData.get(`trigger-${trigger.id}`) ?? trigger.status);
+        if (trigger.type !== "manual") {
+          const intervalHours = Number(formData.get(`trigger-interval-${trigger.id}`) ?? trigger.intervalHours ?? 24);
+          triggerConfigs[trigger.id] = {
+            cadence: String(formData.get(`trigger-cadence-${trigger.id}`) ?? trigger.cadence ?? "daily"),
+            intervalHours: Number.isFinite(intervalHours) && intervalHours > 0 ? intervalHours : 24,
+            timezone: String(formData.get(`trigger-timezone-${trigger.id}`) ?? trigger.timezone ?? "America/Los_Angeles")
+          };
+        }
       }
 
       await saveProjectSettings({
@@ -35,7 +44,8 @@ export function ProjectSettingsForm({ projectId, settings }: ProjectSettingsForm
         markets: String(formData.get("markets") ?? settings.preferences.markets.join(", ")),
         notes: String(formData.get("notes") ?? settings.preferences.notes),
         sourceStatuses,
-        triggerStatuses
+        triggerStatuses,
+        triggerConfigs
       });
     });
   }
@@ -117,7 +127,10 @@ export function ProjectSettingsForm({ projectId, settings }: ProjectSettingsForm
           </section>
 
           <section className="settings-section">
-            <h2>Workflow triggers</h2>
+            <h2>Dream schedule</h2>
+            <p className="settings-desc">
+              Control when Forge wakes up to research, rerank suggestions, and refresh the project review.
+            </p>
             <ul className="settings-rows editable">
               {settings.triggers.map((trigger) => (
                 <li key={trigger.id}>
@@ -128,11 +141,36 @@ export function ProjectSettingsForm({ projectId, settings }: ProjectSettingsForm
                       {trigger.lastRunAt ? ` · last run ${formatTime(trigger.lastRunAt)}` : ""}
                     </span>
                   </div>
-                  <select defaultValue={trigger.status} disabled={isPending} name={`trigger-${trigger.id}`}>
-                    <option value="active">active</option>
-                    <option value="paused">paused</option>
-                    <option value="disabled">disabled</option>
-                  </select>
+                  <div className="trigger-controls">
+                    <select defaultValue={trigger.status} disabled={isPending} name={`trigger-${trigger.id}`}>
+                      <option value="active">active</option>
+                      <option value="paused">paused</option>
+                      <option value="disabled">disabled</option>
+                    </select>
+                    {trigger.type !== "manual" ? (
+                      <>
+                        <select
+                          defaultValue={String(trigger.intervalHours ?? 24)}
+                          disabled={isPending}
+                          name={`trigger-interval-${trigger.id}`}
+                        >
+                          <option value="12">twice daily</option>
+                          <option value="24">daily</option>
+                          <option value="168">weekly</option>
+                        </select>
+                        <select
+                          defaultValue={trigger.timezone ?? "America/Los_Angeles"}
+                          disabled={isPending}
+                          name={`trigger-timezone-${trigger.id}`}
+                        >
+                          <option value="America/Los_Angeles">Pacific</option>
+                          <option value="America/New_York">Eastern</option>
+                          <option value="UTC">UTC</option>
+                        </select>
+                        <input name={`trigger-cadence-${trigger.id}`} type="hidden" value={trigger.cadence ?? "demo"} />
+                      </>
+                    ) : null}
+                  </div>
                 </li>
               ))}
             </ul>

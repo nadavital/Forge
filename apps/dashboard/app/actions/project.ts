@@ -16,6 +16,7 @@ type CreateProjectInput = {
   markets?: string;
   riskTolerance?: string;
   notes?: string;
+  scheduleCadence?: string;
 };
 
 export async function createProject(input: CreateProjectInput) {
@@ -39,7 +40,8 @@ export async function createProject(input: CreateProjectInput) {
     description: input.description,
     markets: splitList(input.markets),
     riskTolerance: input.riskTolerance,
-    notes: input.notes
+    notes: input.notes,
+    scheduleCadence: input.scheduleCadence
   });
 
   await triggerProjectPipeline(project.id);

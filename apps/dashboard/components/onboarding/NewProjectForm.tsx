@@ -18,7 +18,8 @@ export function NewProjectForm() {
         description: String(formData.get("description") ?? ""),
         markets: String(formData.get("markets") ?? ""),
         riskTolerance: String(formData.get("riskTolerance") ?? ""),
-        notes: String(formData.get("notes") ?? "")
+        notes: String(formData.get("notes") ?? ""),
+        scheduleCadence: String(formData.get("scheduleCadence") ?? "daily")
       });
     });
   }
@@ -41,8 +42,12 @@ export function NewProjectForm() {
           />
 
           <label className="field-label" htmlFor="repoUrl">
-            Existing GitHub repository
+            Existing GitHub repository optional
           </label>
+          <p className="field-help">
+            Connect a repo if you already have a product. Leave this blank for a new-product idea; Forge will create a
+            generated repo when you approve a build.
+          </p>
           <div className="field-with-icon">
             <GitBranch aria-hidden="true" />
             <input
@@ -51,7 +56,7 @@ export function NewProjectForm() {
               disabled={isPending}
               id="repoUrl"
               name="repoUrl"
-              placeholder="nadavital/forge or https://github.com/org/repo"
+              placeholder="Optional: nadavital/forge or https://github.com/org/repo"
             />
           </div>
 
@@ -104,6 +109,26 @@ export function NewProjectForm() {
             <option value="low">low</option>
             <option value="medium">medium</option>
             <option value="high">high</option>
+          </select>
+
+          <label className="field-label" htmlFor="scheduleCadence">
+            Dream schedule
+          </label>
+          <p className="field-help">
+            Forge can wake up automatically, reflect on prior decisions, and refresh the project review. You can change
+            this later in Settings.
+          </p>
+          <select
+            className="field-input"
+            defaultValue="daily"
+            disabled={isPending}
+            id="scheduleCadence"
+            name="scheduleCadence"
+          >
+            <option value="daily">Daily</option>
+            <option value="twice_daily">Twice daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="paused">Off for now</option>
           </select>
 
           <label className="field-label" htmlFor="notes">

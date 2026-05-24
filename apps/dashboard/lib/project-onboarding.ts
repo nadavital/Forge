@@ -24,6 +24,7 @@ export type ProjectDefaultsInput = {
   markets?: string[];
   riskTolerance?: string;
   notes?: string | null;
+  scheduleCadence?: string | null;
   now?: string;
   idFactory: (prefix: string) => string;
 };
@@ -89,6 +90,7 @@ export function buildProjectDefaults(input: ProjectDefaultsInput): ProjectDefaul
   const github = normalizeGithubRepository(input.repoUrl);
   const description = clean(input.description);
   const productUrl = clean(input.productUrl);
+  const schedule = scheduleDefaults(input.scheduleCadence);
 
   const project: DbProject = {
     id: input.projectId,
@@ -151,12 +153,13 @@ export function buildProjectDefaults(input: ProjectDefaultsInput): ProjectDefaul
     {
       id: input.idFactory("trg"),
       project_id: input.projectId,
-      name: "Weekday morning",
+      name: "Dream review",
       trigger_type: "schedule",
-      status: "paused",
+      status: schedule.status,
       config: {
         timezone: "America/Los_Angeles",
-        cadence: "weekday_morning"
+        cadence: schedule.cadence,
+        interval_hours: schedule.intervalHours
       }
     }
   ];
@@ -251,6 +254,13 @@ function defaultPreferenceNotes(mode: ProjectMode): string {
     return "Start with repo evidence and manual ideas before enabling scheduled reviews.";
   }
   return "Start with manual ideas and taste notes until the loop feels right.";
+}
+
+function scheduleDefaults(value?: string | null): { status: string; cadence: string; intervalHours: number } {
+  if (value === "paused") return { status: "paused", cadence: "paused", intervalHours: 24 };
+  if (value === "twice_daily") return { status: "active", cadence: "twice_daily", intervalHours: 12 };
+  if (value === "weekly") return { status: "active", cadence: "weekly", intervalHours: 168 };
+  return { status: "active", cadence: "daily", intervalHours: 24 };
 }
 
 function clean(value: unknown): string {

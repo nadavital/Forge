@@ -39,10 +39,7 @@ export function AppSidebar() {
                   className={active ? "project-link active" : "project-link"}
                   href={`/projects/${project.id}`}
                 >
-                  <span className="project-link-top">
-                    <span className="project-link-name">{project.name}</span>
-                    <span className="project-link-score">{project.opportunities[0]?.score ?? "—"}</span>
-                  </span>
+                  <span className="project-link-name">{project.name}</span>
                   <span className="project-link-meta">
                     {plural(project.opportunities.length, "opportunity", "opportunities")} · {project.mode}
                   </span>

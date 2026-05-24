@@ -55,6 +55,7 @@ export type MorningDigest = {
   summary: string;
   changes: string[];
   topRecommendation?: string;
+  reflectionProposalCount?: number;
 };
 
 export type MorningReviewProject = {
@@ -87,7 +88,16 @@ export type ProjectSettingsView = {
     }>;
   };
   sources: Array<{ id: string; name: string; type: string; status: string }>;
-  triggers: Array<{ id: string; name: string; type: string; status: string; lastRunAt?: string | null }>;
+  triggers: Array<{
+    id: string;
+    name: string;
+    type: string;
+    status: string;
+    lastRunAt?: string | null;
+    cadence?: string | null;
+    intervalHours?: number | null;
+    timezone?: string | null;
+  }>;
   preferences: {
     riskTolerance: string;
     markets: string[];

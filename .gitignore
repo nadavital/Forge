@@ -15,3 +15,9 @@ coverage/
 .DS_Store
 *.log
 *.tsbuildinfo
+
+# Local duplicate files created by editor/Finder conflict copies.
+* 2.*
+
+# Local uv environment lock generated while smoke-testing the Python service.
+services/managed_research/uv.lock

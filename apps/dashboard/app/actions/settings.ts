@@ -14,6 +14,7 @@ type SaveProjectSettingsInput = {
   notes: string;
   sourceStatuses: Record<string, string>;
   triggerStatuses: Record<string, string>;
+  triggerConfigs: Record<string, { cadence: string; intervalHours: number; timezone: string }>;
 };
 
 export async function saveProjectSettings(input: SaveProjectSettingsInput) {
@@ -33,7 +34,20 @@ export async function saveProjectSettings(input: SaveProjectSettingsInput) {
       notes: input.notes
     },
     sources: Object.entries(input.sourceStatuses).map(([id, status]) => ({ id, status })),
-    triggers: Object.entries(input.triggerStatuses).map(([id, status]) => ({ id, status }))
+    triggers: Object.entries(input.triggerStatuses).map(([id, status]) => {
+      const config = input.triggerConfigs[id];
+      return {
+        id,
+        status,
+        config: config
+          ? {
+              cadence: config.cadence,
+              interval_hours: config.intervalHours,
+              timezone: config.timezone
+            }
+          : undefined
+      };
+    })
   });
 
   const repoUrl = input.repoUrl?.trim();
