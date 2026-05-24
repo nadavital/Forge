@@ -79,38 +79,7 @@ def synthesize_opportunities(
     signals: list[ManagedSignal],
     max_opportunities: int,
 ) -> list[ManagedOpportunity]:
-    buckets = _bucket_media(media_items)
-    opportunities: list[ManagedOpportunity] = []
-    for bucket, media_indexes in buckets.items():
-        signal_indexes = [
-            index
-            for index, signal in enumerate(signals)
-            if bucket in " ".join(signal.tags).lower()
-            or bucket == _best_bucket(f"{signal.title} {signal.body}")
-        ]
-        if not signal_indexes:
-            continue
-        label = _bucket_label(bucket)
-        score = min(1.0, 0.5 + 0.1 * len(signal_indexes))
-        opportunities.append(
-            ManagedOpportunity(
-                title=f"{label.title()} workflow helper",
-                problem=f"Developers have repeated pain with {label}.",
-                target_user="Developers building production AI and developer-tool workflows",
-                mvp_concept=_mvp_for_bucket(bucket),
-                score=round(score, 2),
-                score_rationale=f"Detected {len(signal_indexes)} public signals and {len(media_indexes)} collected media items for this pain area.",
-                source_indexes=signal_indexes[:5],
-                profile={
-                    "facts": [f"{len(media_indexes)} collected media items mention {label}."],
-                    "inferences": ["A narrow workflow tool can test this pain before a full platform."],
-                    "risks": ["Deterministic synthesis is coarse; managed research should review top clusters."],
-                    "media_item_indexes": media_indexes[:10],
-                },
-            )
-        )
-    opportunities.sort(key=lambda item: item.score, reverse=True)
-    return opportunities[:max_opportunities]
+    return []
 
 
 def _bucket_media(media_items: list[MediaItem]) -> dict[str, list[int]]:
@@ -157,14 +126,3 @@ def _observed_pain(bucket: str) -> str:
         "integration": "Tool, API, and schema integrations are brittle.",
     }.get(bucket, "Developer workflow pain appears repeatedly.")
 
-
-def _mvp_for_bucket(bucket: str) -> str:
-    return {
-        "deploy": "Deployment readiness checker with config linting and smoke tests.",
-        "eval": "Agent regression test runner with repeated-case summaries.",
-        "observe": "Trace viewer and failure classifier for agent runs.",
-        "cost": "Budget guardrail proxy that stops runaway agent calls.",
-        "security": "Tool-call policy gateway with allowlists and audit logs.",
-        "rag": "RAG quality monitor with retrieval drift checks.",
-        "integration": "Schema and tool integration validator for agent workflows.",
-    }.get(bucket, "Small workflow helper focused on the repeated developer pain.")
