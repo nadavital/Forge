@@ -57,7 +57,8 @@ export async function triggerProjectPipeline(projectId: string): Promise<{ runId
         ],
         reflection_proposal_count: reflection.proposalCount,
         reflection_run_ids: reflection.runIds,
-        project_knowledge: discovery.knowledge
+        project_knowledge: discovery.knowledge,
+        repo_analysis: discovery.analysis
       });
 
       return {
