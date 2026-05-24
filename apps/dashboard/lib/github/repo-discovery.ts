@@ -288,6 +288,39 @@ function detectRepoSurfaces(files: string[], readme: string) {
   const text = `${files.join("\n")}\n${readme}`.toLowerCase();
   const candidates = [
     {
+      id: "recipe_library",
+      label: "recipe library",
+      title: "Make saved recipes easier to revisit",
+      terms: ["recipe", "library", "collection", "cookbook", "savedrecipe", "recipedetail"],
+      targetUser: "Home cooks returning to saved recipes and collections",
+      mvpConcept: (repoName: string) =>
+        `Improve one saved-recipe flow in ${repoName}: faster rediscovery, clearer recipe context, or a better path from collection to cooking.`,
+      rationale: () => "The repo has recipe library and collection surfaces, so Forge can improve how users return to saved cooking ideas.",
+      score: 88
+    },
+    {
+      id: "cook_mode",
+      label: "cooking flow",
+      title: "Improve the active cooking flow",
+      terms: ["cookmode", "cooking", "cook", "ingredient", "instruction", "step", "timer"],
+      targetUser: "Users cooking from a recipe in the kitchen",
+      mvpConcept: (repoName: string) =>
+        `Improve one active cooking flow in ${repoName} so the user can see the current step, ingredients, and next action with less friction.`,
+      rationale: () => "The repo contains cooking-mode or recipe-step surfaces, which are strong candidates for an active-use improvement.",
+      score: 87
+    },
+    {
+      id: "recipe_generation",
+      label: "recipe generation",
+      title: "Make generated recipes easier to trust",
+      terms: ["airecipe", "generator", "generate", "ai", "recommendation", "suggestion"],
+      targetUser: "Users asking the app to create or adapt recipes",
+      mvpConcept: (repoName: string) =>
+        `Add transparency around one generated recipe workflow in ${repoName}: why it was suggested, what constraints shaped it, and how to adjust it.`,
+      rationale: () => "The app appears to generate recipes, so trust, constraints, and editability are high-leverage product improvements.",
+      score: 86
+    },
+    {
       id: "onboarding",
       label: "onboarding and first-run",
       title: "Improve first-run activation",
@@ -302,7 +335,7 @@ function detectRepoSurfaces(files: string[], readme: string) {
       id: "planning",
       label: "planning and generation",
       title: "Make generated plans easier to trust",
-      terms: ["plan", "planner", "generate", "gemini", "ai", "recommendation", "schedule", "routine"],
+      terms: ["plan", "planner", "workoutplan", "trainingplan", "gemini", "recommendation", "schedule", "routine"],
       targetUser: "Users relying on generated app recommendations or plans",
       mvpConcept: (repoName: string) =>
         `Add transparency around one generated ${repoName} workflow: show why the result was created, what inputs affected it, and how to regenerate or adjust it.`,
@@ -324,7 +357,7 @@ function detectRepoSurfaces(files: string[], readme: string) {
       id: "workout",
       label: "workout and activity",
       title: "Tighten the live activity loop",
-      terms: ["workout", "exercise", "activity", "timer", "set", "rep", "muscle", "training"],
+      terms: ["workout", "exercise", "livetraining", "liveworkout", "training", "reps", "muscle"],
       targetUser: "Users actively logging or following activity inside the app",
       mvpConcept: (repoName: string) =>
         `Improve one active-use ${repoName} flow so the user can see current state, next step, and completion outcome without leaving the main activity screen.`,
@@ -358,7 +391,7 @@ function detectRepoSurfaces(files: string[], readme: string) {
   return candidates
     .map((candidate) => {
       const matchedFiles = files.filter((file) => includesAny(file, candidate.terms));
-      const readmeHits = candidate.terms.filter((term) => text.includes(term));
+      const readmeHits = candidate.terms.filter((term) => tokenIncludes(text, term));
       return {
         ...candidate,
         files: matchedFiles,
@@ -378,8 +411,17 @@ function readmeEvidenceLine(readme: string): string {
 }
 
 function includesAny(text: string, terms: string[]): boolean {
-  const lowered = text.toLowerCase();
-  return terms.some((term) => lowered.includes(term));
+  return terms.some((term) => tokenIncludes(text, term));
+}
+
+function tokenIncludes(text: string, term: string): boolean {
+  const normalizedText = text.toLowerCase();
+  const normalizedTerm = term.toLowerCase();
+  if (normalizedTerm.length <= 3) {
+    const tokens = normalizedText.split(/[^a-z0-9]+/).filter(Boolean);
+    return tokens.includes(normalizedTerm);
+  }
+  return normalizedText.includes(normalizedTerm);
 }
 
 function makeOpportunity(input: {
