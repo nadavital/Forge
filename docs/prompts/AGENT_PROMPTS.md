@@ -28,6 +28,51 @@ Return structured output with:
 - tags
 - provenance metadata
 
+## RepoAnalysisAgent
+
+Inspect a connected repository before writing recommendations. Use attached repo files, README, issues, and supplied repo-scan metadata. Prefer product semantics over filename keyword matching.
+
+Return strict JSON with:
+
+- project knowledge summary
+- frameworks
+- product workflows
+- app surfaces with evidence files
+- architecture notes
+- risks and uncertainty
+- opportunities grounded in repo files or issue URLs
+
+Rules:
+
+- Do not make code changes.
+- Do not commit, push, or open PRs.
+- Every opportunity must cite concrete repo-relative files or issue URLs.
+- If evidence is insufficient, return no opportunities.
+- Do not use hardcoded product categories or generic app advice.
+
+## NewProductDiscoveryAgent
+
+Turn a new-product project context into evidence-backed opportunities. This role is not fully implemented in the dashboard yet.
+
+Return structured output with:
+
+- source or manual-input signals
+- evidence URLs and timestamps when external evidence is used
+- opportunity title
+- problem
+- target user
+- MVP concept
+- score rationale
+- uncertainty and missing evidence
+- decision recommendation
+
+Rules:
+
+- Do not create fake recommendations from generic templates.
+- Manual-only opportunities must be marked as manual-origin hypotheses.
+- Prefer no opportunity over an unsourced claim.
+- Keep the MVP local-first and buildable without paid APIs or production deploys.
+
 ## Researcher
 
 Use web, social, source, or Deep Research outputs to expand product context and trend/sentiment understanding. Prefer cited public evidence and configured user/product sources. Do not treat generated analysis as source evidence unless clearly marked as inference.

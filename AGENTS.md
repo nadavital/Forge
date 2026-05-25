@@ -4,7 +4,9 @@ Primary instructions for AI coding agents working in this repository.
 
 ## Current State
 
-The repo is a scaffold. Do not assume any implementation exists until you inspect the tree.
+The repo is an early vertical slice, not a blank scaffold. It currently includes a Next.js dashboard, local JSON/Supabase storage contracts, connected GitHub repo discovery, Gemini/Antigravity-style repo analysis, recommendation review actions, build brief generation, simulated and managed builder adapters, and a simple reflection proposal loop.
+
+Still inspect the tree before making claims. Some docs describe target architecture and some code paths require live credentials.
 
 The product target is a product-first agent system that:
 
@@ -27,6 +29,7 @@ The product target is a product-first agent system that:
 5. Keep opportunity data, evaluations, decisions, prototypes, build briefs, build logs, generated artifacts, and reflection proposals separate.
 6. Avoid speculative infrastructure docs that cannot be run.
 7. Keep self-improvement versioned and auditable; do not silently mutate high-risk behavior.
+8. Keep docs current with product, agent, architecture, data, and runtime changes.
 
 ## Proposed Stack
 
@@ -64,6 +67,18 @@ docs/
 ```
 
 Generated MVP code should not live in this repo. It should be created in separate generated repos from a template repo. Lightweight generated UI schemas, prototype metadata, screenshots, and review artifacts may be stored as Forge records or artifacts.
+
+## Documentation Contract
+
+Update docs in the same change when behavior changes:
+
+- Product behavior: `README.md` and `docs/PRODUCT_OVERVIEW.md`.
+- Agent roles or paths: `docs/AGENT_SYSTEM.md` and `docs/prompts/AGENT_PROMPTS.md`.
+- Architecture/runtime flow: `docs/ARCHITECTURE.md`.
+- Data model/status values: `docs/DATA_MODEL.md`, migrations, and DB types.
+- Dashboard setup or env vars: `apps/dashboard/README.md`.
+
+Use [Docs Maintenance](./docs/DOCS_MAINTENANCE.md) as the checklist. Do not let docs drift back into stale scaffold language or claim target behavior as current behavior.
 
 ## Agent Roles
 

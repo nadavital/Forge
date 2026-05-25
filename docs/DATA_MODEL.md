@@ -1,6 +1,10 @@
 # Data Model
 
-Draft contract for the first SQL migration. Prefer boring tables that make product context, opportunity ranking, builder behavior, and Forge self-improvement auditable.
+Durable storage contract for Forge's local JSON store and Supabase tables. Prefer boring records that make product context, opportunity ranking, builder behavior, and Forge self-improvement auditable.
+
+The dashboard currently uses this model through `apps/dashboard/lib/db/repository.ts`. Local development writes a compatible JSON shape to `.forge-data/store.json`; hosted runs use Supabase migrations in `supabase/migrations`.
+
+When adding status values, metadata payloads, or artifact types, update this file, TypeScript DB types, and Supabase migrations together.
 
 ## projects
 
@@ -88,16 +92,16 @@ Stores behavior signals used to adjust future ranking.
 
 ## pipeline_runs
 
-Tracks each opportunity or build pipeline execution.
+Tracks each product discovery, research, review, build, or reflection pipeline execution.
 
 | Column | Type | Notes |
 | --- | --- | --- |
 | `id` | uuid | Primary key |
 | `project_id` | uuid | References `projects.id` |
 | `trigger_id` | uuid | References `triggers.id` when applicable |
-| `run_type` | text | `scan`, `research`, `ranking`, `review`, `build`, `reflection`, `fixture`, `managed` |
-| `status` | text | `pending`, `running`, `completed`, `failed` |
-| `trigger` | text | `manual`, `schedule`, `signal`, `fixture`, `remote` |
+| `run_type` | text | `scan`, `research`, `ranking`, `review`, `build`, `reflection`, `fixture`, `managed`, `discovery` |
+| `status` | text | `queued`, `pending`, `running`, `in_progress`, `completed`, `failed` depending on local/Supabase compatibility |
+| `trigger` | text | `manual`, `scheduled`, `schedule`, `onboarding`, `managed_agent`, `signal`, `fixture`, `remote` depending on local/Supabase compatibility |
 | `started_at` | timestamptz | Run start |
 | `completed_at` | timestamptz | Run end |
 | `error` | text | Failure summary |
@@ -249,7 +253,7 @@ Stores reviewed generated PR artifacts.
 | --- | --- | --- |
 | `id` | uuid | Primary key |
 | `mvp_build_id` | uuid | References `mvp_builds.id` |
-| `artifact_type` | text | `readme`, `test_result`, `screenshot`, `run_instruction`, `service_manifest` |
+| `artifact_type` | text | `readme`, `test_result`, `screenshot`, `run_instruction`, `service_manifest`, `build_brief`, `build_review` |
 | `content` | text | Summary or rendered artifact text |
 | `url` | text | Artifact URL when applicable |
 | `metadata` | jsonb | Structured details |

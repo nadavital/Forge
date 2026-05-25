@@ -4,6 +4,27 @@ This is the source of truth for connecting the Forge dashboard to the managed-ag
 
 Forge is a single-user hackathon product for now. It should still be project-scoped so the product can later support real users, teams, and multiple active apps without rewriting the core flow.
 
+## Current Status
+
+The current dashboard uses server actions and local library calls rather than separate HTTP API routes for the main app flow. It can run against `.forge-data/store.json` or Supabase through `apps/dashboard/lib/db/repository.ts`.
+
+Implemented current path:
+
+```text
+project setup
+  -> repo/context analysis when repo_url exists
+  -> signal + opportunity persistence
+  -> dashboard recommendation review
+  -> human build approval
+  -> build brief
+  -> simulated or managed builder
+  -> build artifacts and reflection proposals
+```
+
+New-product setup currently captures context signals but does not create recommendation cards until an agent-backed discovery path exists.
+
+The API routes below are the target backend contract. Keep them aligned with the server-action behavior while the app remains local-first.
+
 ## Product Flow
 
 ```text

@@ -1,6 +1,6 @@
 # Forge Dashboard
 
-Internal morning-review UI for Forge Phase 4.
+Internal product-review UI for Forge.
 
 ## Quick start
 
@@ -29,9 +29,9 @@ pnpm --filter @forge/dashboard seed:reset
 pnpm setup
 ```
 
-### Connect to Supabase (when backend is ready)
+### Connect to Supabase
 
-Your partner should apply `supabase/migrations/001_initial.sql` and share credentials.
+Apply the migrations in `supabase/migrations` and provide server-side credentials.
 
 ```bash
 cp apps/dashboard/.env.local.example apps/dashboard/.env.local
@@ -59,16 +59,16 @@ projects created through the app or records written by the local pipeline.
 - Build button → build brief → Gemini managed builder when `GEMINI_API_KEY` is set, otherwise simulated builder → `mvp_builds` + `build_artifacts`
 - Reflection proposal accept/reject
 - Project scheduler control → runs due active schedule triggers for the selected project
-- Connected product setup with a GitHub repo URL → README/issues ingestion → repo-specific opportunity ranking
-- New product runs generate buildable ideas from the preference/profile context when you do not know what to build yet
-- Run again re-ingests the connected repo when a repo URL is configured, or refreshes generated ideas for new products
+- Connected product setup with a GitHub repo URL → README/issues/tree ingestion → Gemini/Antigravity repo analysis → repo-specific recommendations when semantic discovery returns them
+- New product runs currently capture project/preference context as signals but do not create recommendation cards until agent-backed discovery is implemented
+- Run again re-ingests the connected repo when a repo URL is configured, or refreshes new-product context signals when no repo is configured
 - Archive project (hides it and disables triggers without deleting history)
 
-**Backend (your partner) — still to wire**
+**Still to wire**
 
 - Apply SQL migration to hosted Supabase
 - Set `project_id` on pipeline ingestion rows
-- Real pipeline trigger (Python `managed_research/ingest.py`) instead of simulated run
+- Decide whether dashboard Dream should call the Python `managed_research/ingest.py` service or stay in the TypeScript server-action path
 - Realtime subscriptions on build status
 
 ## Managed builds
@@ -98,4 +98,4 @@ Forge fetches the repository metadata, README, and latest issues, then creates r
 
 ## New product demo
 
-For new products, leaving the idea direction blank is valid. Forge generates ideas from the project preference profile and constraints, then writes explicit `manual_preference`, `builder_profile`, and `demo_constraint` signals before creating opportunities. Editing preferred markets or notes in project settings steers the next run.
+For new products, leaving the idea direction blank is valid. Forge currently writes explicit `manual_preference` and `demo_constraint` signals, then shows an empty recommendation state until model-backed discovery is added. Editing preferred markets or notes in project settings steers the next run context.

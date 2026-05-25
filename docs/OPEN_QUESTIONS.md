@@ -2,6 +2,15 @@
 
 Answer these before expanding scope. Do not block the first fixture-based vertical slice on every item here.
 
+## Current Answers
+
+- Minimum useful connected-product setup: a project with a GitHub repo URL, preference notes, manual/GitHub source configs, and a manual trigger. This path can run repo discovery and semantic repo analysis.
+- Minimum useful new-product setup: project context and preference notes only. It is not useful enough yet because it does not produce agent-backed recommendations.
+- First dashboard priority: product review and approval, not raw source browsing.
+- First build approval rule: human approves the opportunity/direction only; Forge owns implementation details inside the v1 build contract.
+- First reflection boundary: reflection may store proposals, but it must not silently change high-risk prompts, skills, credentials, destructive permissions, or build policies.
+- Current docs rule: any product, architecture, agent, data, or runtime change must update the matching docs in the same change.
+
 ## Product
 
 - What is the minimum useful connected-product setup?
