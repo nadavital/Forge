@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { archiveProjectRecord, createProjectRecord } from "@/lib/db/repository";
+import { ensureProjectGitHubRepo } from "@/lib/github/repo-create";
 import { triggerProjectPipeline } from "@/lib/pipeline";
 import { normalizeGithubRepository } from "@/lib/project-onboarding";
 import type { ProjectMode } from "@/types/forge";
@@ -27,15 +28,20 @@ export async function createProject(input: CreateProjectInput) {
   }
 
   const cleanedRepoUrl = input.repoUrl?.trim();
-  const mode: ProjectMode = cleanedRepoUrl ? "connected_product" : "new_product";
   if (cleanedRepoUrl && !normalizeGithubRepository(cleanedRepoUrl)) {
     return { ok: false as const, message: "Use a GitHub repository URL like https://github.com/org/repo." };
   }
+  const repoUrl = await ensureProjectGitHubRepo({
+    projectName: trimmed,
+    repoUrl: cleanedRepoUrl,
+    description: input.description
+  });
+  const mode: ProjectMode = "connected_product";
 
   const project = await createProjectRecord({
     name: trimmed,
     mode,
-    repoUrl: cleanedRepoUrl,
+    repoUrl,
     productUrl: input.productUrl,
     description: input.description,
     markets: splitList(input.markets),

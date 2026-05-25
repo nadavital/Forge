@@ -1,6 +1,7 @@
 import {
   completePipelineRun,
   createPipelineRun,
+  failPipelineRun,
   getProjectBundle,
   replaceProjectDiscoveryRecords,
   updateProjectRepository
@@ -18,53 +19,66 @@ export async function triggerProjectPipeline(projectId: string): Promise<{ runId
   const reflectionLine = `Reflected on prior decisions and generated ${reflection.proposalCount} self-improvement proposal${reflection.proposalCount === 1 ? "" : "s"}`;
 
   if (repoUrl) {
-    const discovery = await discoverGitHubRepo(repoUrl);
-    await updateProjectRepository({
-      projectId,
-      repoUrl: discovery.repoUrl,
-      productContext: discovery.productContext
-    });
-    await replaceProjectDiscoveryRecords({
-      projectId,
-      runId: run.id,
-      signals: discovery.signals,
-      opportunities: rankOpportunitiesWithPreferences({
-        opportunities: discovery.opportunities,
-        existingOpportunities: bundle.opportunities,
-        preferenceEvents: bundle.preferenceEvents,
-        preferences: bundle.preferences
-      })
-    });
+    try {
+      const discovery = await discoverGitHubRepo(repoUrl);
+      await updateProjectRepository({
+        projectId,
+        repoUrl: discovery.repoUrl,
+        productContext: discovery.productContext
+      });
+      await replaceProjectDiscoveryRecords({
+        projectId,
+        runId: run.id,
+        signals: discovery.signals,
+        opportunities: rankOpportunitiesWithPreferences({
+          opportunities: discovery.opportunities,
+          existingOpportunities: bundle.opportunities,
+          preferenceEvents: bundle.preferenceEvents,
+          preferences: bundle.preferences
+        })
+      });
 
-    await completePipelineRun(run.id, {
-      source: "github",
-      repo_url: discovery.repoUrl,
-      digest_summary:
-        discovery.opportunities.length > 0
-          ? `Analyzed ${discovery.projectName} and generated ${discovery.opportunities.length} repo-specific opportunities.`
-          : `Analyzed ${discovery.projectName}. Forge collected repo context but did not find enough evidence for a recommendation yet.`,
-      changes: [
-        reflectionLine,
-        `Collected ${discovery.signals.length} GitHub repo signals`,
-        discovery.opportunities.length > 0
-          ? `Ranked ${discovery.opportunities.length} opportunities from README and issue context`
-          : "No recommendation cards were created because the repo evidence was too thin",
-        discovery.opportunities.length > 0
-          ? "Build briefs will target the connected repository"
-          : "Add issues, notes, or run managed research to generate stronger opportunities"
-      ],
-      reflection_proposal_count: reflection.proposalCount,
-      reflection_run_ids: reflection.runIds,
-      project_knowledge: discovery.knowledge
-    });
+      await completePipelineRun(run.id, {
+        source: "github",
+        repo_url: discovery.repoUrl,
+        digest_summary:
+          discovery.opportunities.length > 0
+            ? `Analyzed ${discovery.projectName} with semantic discovery and produced ${discovery.opportunities.length} evidence-backed opportunities.`
+            : `Analyzed ${discovery.projectName}. Forge collected project memory; recommendations are pending semantic discovery evidence.`,
+        changes: [
+          reflectionLine,
+          `Collected ${discovery.signals.length} GitHub repo signals`,
+          discovery.opportunities.length > 0
+            ? `Ranked ${discovery.opportunities.length} model-generated opportunities with repository evidence`
+            : "No recommendation cards were created without model-backed product reasoning",
+          discovery.opportunities.length > 0
+            ? "Build briefs will target the connected repository"
+            : "Project memory is available; rerun Dream when semantic discovery is configured or evidence improves"
+        ],
+        reflection_proposal_count: reflection.proposalCount,
+        reflection_run_ids: reflection.runIds,
+        project_knowledge: discovery.knowledge,
+        repo_analysis: discovery.analysis
+      });
 
-    return {
-      runId: run.id,
-      message:
-        discovery.opportunities.length > 0
-          ? `Pipeline run completed for ${discovery.projectName}. Refresh to review repo-specific ideas.`
-          : `Pipeline run completed for ${discovery.projectName}. Forge needs more evidence before recommending ideas.`
-    };
+      return {
+        runId: run.id,
+        message:
+          discovery.opportunities.length > 0
+            ? `Pipeline run completed for ${discovery.projectName}. Refresh to review repo-specific ideas.`
+            : `Pipeline run completed for ${discovery.projectName}. Forge collected memory but did not create non-agentic recommendations.`
+      };
+    } catch (error) {
+      await failPipelineRun(run.id, {
+        source: "github",
+        repo_url: repoUrl,
+        digest_summary: "Dream failed before semantic recommendations were created.",
+        error: error instanceof Error ? error.message : String(error),
+        reflection_proposal_count: reflection.proposalCount,
+        reflection_run_ids: reflection.runIds
+      });
+      throw error;
+    }
   }
 
   const discovery = discoverNewProductIdeas({
@@ -88,14 +102,14 @@ export async function triggerProjectPipeline(projectId: string): Promise<{ runId
     digest_summary:
       discovery.opportunities.length > 0
         ? `Generated ${discovery.opportunities.length} new-product direction${discovery.opportunities.length === 1 ? "" : "s"} from explicit project context.`
-        : "Collected project context. Forge needs concrete notes, feedback, or research evidence before recommending ideas.",
+        : "Collected project context. Recommendations require model-backed discovery, not seeded templates.",
     changes: [
       reflectionLine,
       `Collected ${discovery.signals.length} project context signals`,
       discovery.opportunities.length > 0
         ? `Ranked ${discovery.opportunities.length} manually grounded idea${discovery.opportunities.length === 1 ? "" : "s"} for review`
-        : "No recommendation cards were created because no concrete product evidence was supplied",
-      "Forge will not show seeded placeholder opportunities as recommendations"
+        : "No recommendation cards were created from hardcoded templates",
+      "Forge only stores the supplied context until an agent creates recommendations"
     ],
     reflection_proposal_count: reflection.proposalCount,
     reflection_run_ids: reflection.runIds
@@ -103,7 +117,7 @@ export async function triggerProjectPipeline(projectId: string): Promise<{ runId
 
   return {
     runId: run.id,
-    message: "Pipeline run completed. Refresh to review generated product ideas."
+    message: "Pipeline run completed. Refresh to review collected project context."
   };
 }
 

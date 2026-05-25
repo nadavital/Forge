@@ -97,22 +97,20 @@ export function OpportunityDetail({ opportunity, projectId, projectName }: Oppor
         <article className="neural-response">
           <div aria-hidden="true" className="neural-response-glow" />
           <div className="neural-response-inner">
-            <p className="response-story">{narrative.story}</p>
-            <p className="response-tension">{narrative.tension}</p>
-            <p className="response-taste">{narrative.taste}</p>
             <div className="response-mvp">
-              <span className="response-label">Suggested MVP</span>
+              <span className="response-label">Why this exists</span>
+              <p>{opportunity.problem || opportunity.decision.summary}</p>
+            </div>
+
+            <div className="response-mvp">
+              <span className="response-label">What Forge would build</span>
               <p>{narrative.mvp}</p>
             </div>
 
-            {narrative.prototypes && narrative.prototypes.length > 0 ? (
-              <div className="response-mvp">
-                <span className="response-label">Prototype option</span>
-                <p>
-                  {narrative.prototypes[0].title} · {narrative.prototypes[0].status}
-                </p>
-              </div>
-            ) : null}
+            <div className="response-mvp">
+              <span className="response-label">Decision</span>
+              <p>{opportunity.decision.summary}</p>
+            </div>
 
             {narrative.signalCount > 0 ? (
               <div className="response-signals">
@@ -146,6 +144,7 @@ export function OpportunityDetail({ opportunity, projectId, projectName }: Oppor
 
             {narrative.buildLine ? (
               <div className="response-build">
+                <span className="response-label">Build result</span>
                 <p>{narrative.buildLine}</p>
                 {narrative.buildSummary ? <p>{narrative.buildSummary}</p> : null}
                 {narrative.buildLogs ? <p className="build-logs">{narrative.buildLogs}</p> : null}

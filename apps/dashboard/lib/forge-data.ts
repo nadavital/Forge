@@ -246,6 +246,8 @@ function mapRunStages(run: DbPipelineRun, metadata: JsonObject): MorningDigest["
   const source = cleanText(metadata.source);
   const repoFastRun = source === "github";
   const sourceCollection = objectValue(metadata.source_collection);
+  const repoAnalysis = objectValue(metadata.repo_analysis);
+  const repoScan = objectValue(repoAnalysis?.repo_scan);
   const research = objectValue(metadata.deep_research) || (metadata.pipeline === "trend_research" ? metadata : null);
   const clustering = objectValue(metadata.opportunity_clustering);
   const bullBear = objectValue(metadata.bull_bear) || (metadata.pipeline === "bull_bear_evaluation" ? metadata : null);
@@ -269,15 +271,15 @@ function mapRunStages(run: DbPipelineRun, metadata: JsonObject): MorningDigest["
       detail: sourceCollection
         ? countDetail(sourceCollection, "signals_saved", "signals collected")
         : repoFastRun
-          ? "Read GitHub repo context and recent issue/README signals for this project."
+          ? repoScanDetail(repoScan)
         : metadata.pipeline === "source_collect"
           ? countDetail(metadata, "signal_count", "signals collected")
           : "Collects public signals, repo context, and manual inputs."
     },
     {
-      label: "Research",
-      status: repoFastRun ? "not_run" : researchStatus(research, running, failed),
-      detail: repoFastRun ? "Not run in the fast repo import. Use a managed research run when deeper evidence is needed." : researchDetail(research)
+      label: repoFastRun ? "Managed inspection" : "Research",
+      status: repoFastRun ? managedInspectionStatus(repoAnalysis, running, failed) : researchStatus(research, running, failed),
+      detail: repoFastRun ? managedInspectionDetail(repoAnalysis) : researchDetail(research)
     },
     {
       label: "Bull/Bear critique",
@@ -290,16 +292,40 @@ function mapRunStages(run: DbPipelineRun, metadata: JsonObject): MorningDigest["
     },
     {
       label: "Recommendation synthesis",
-      status: stageStatus({ present: Boolean(clustering) || Boolean(bullBear) || repoFastRun, running, failed }),
+      status: stageStatus({ present: Boolean(clustering) || Boolean(bullBear) || Boolean(repoAnalysis), running, failed }),
       detail: clustering
         ? countDetail(clustering, "clusters_saved_in_run_metadata", "candidate clusters ranked")
         : repoFastRun && opportunityCount > 0
-          ? `${opportunityCount} repo-derived recommendation${opportunityCount === 1 ? "" : "s"} created from the fast import.`
+          ? `${opportunityCount} Antigravity recommendation${opportunityCount === 1 ? "" : "s"} created from repository evidence.`
         : repoFastRun
-          ? "No recommendation cards were created because the repo evidence was too thin."
+          ? "Project memory collected; no recommendations were created without managed evidence."
         : "Turns clustered opportunities into the next action."
     }
   ];
+}
+
+function repoScanDetail(repoScan: JsonObject | null): string {
+  if (!repoScan) return "Collected GitHub repo context before managed inspection.";
+  const files = typeof repoScan.files_seen === "number" ? repoScan.files_seen : 0;
+  const issues = typeof repoScan.issues_seen === "number" ? repoScan.issues_seen : 0;
+  return `Collected ${files} repository files and ${issues} issue${issues === 1 ? "" : "s"} for managed inspection.`;
+}
+
+function managedInspectionStatus(
+  repoAnalysis: JsonObject | null,
+  running: boolean,
+  failed: boolean
+): "completed" | "running" | "waiting" | "failed" {
+  if (failed) return "failed";
+  if (repoAnalysis?.status === "completed") return "completed";
+  return running ? "running" : "waiting";
+}
+
+function managedInspectionDetail(repoAnalysis: JsonObject | null): string {
+  if (!repoAnalysis) return "Antigravity clones and inspects the repository before recommendations are shown.";
+  const elapsed = typeof repoAnalysis.elapsed_ms === "number" ? ` in ${Math.round(repoAnalysis.elapsed_ms / 1000)}s` : "";
+  const count = typeof repoAnalysis.opportunity_count === "number" ? repoAnalysis.opportunity_count : 0;
+  return `Antigravity inspected the repository${elapsed} and returned ${count} recommendation${count === 1 ? "" : "s"}.`;
 }
 
 function objectValue(value: unknown): JsonObject | null {
