@@ -1,4 +1,5 @@
 -- Demo loop contract hardening for preference learning, prototypes, reflection, and build review.
+-- This migration depends on runtime tables from 0005_dashboard_runtime_tables.sql.
 
 alter table if exists public.prototype_options
   add column if not exists prototype_type text,
@@ -16,3 +17,5 @@ create index if not exists idx_prototype_options_project_created
 
 create index if not exists idx_reflection_runs_project_created
   on public.reflection_runs(project_id, created_at desc);
+
+notify pgrst, 'reload schema';

@@ -1,18 +1,32 @@
 import { triggerProjectPipeline } from "@/lib/pipeline";
-import { loadStore, markTriggerRan } from "@/lib/db/repository";
+import { getActiveIdentity, loadStore, markTriggerRan } from "@/lib/db/repository";
+import { projectVisibleToIdentity } from "@/lib/db/identity-scope";
+import { shouldRunScheduledProjectTrigger } from "./policy.ts";
 import type { DbTrigger } from "@/lib/db/types";
 
 export async function runDueProjectTriggers(input: { projectId?: string; now?: Date } = {}): Promise<Array<{ projectId: string; runId: string }>> {
   const store = await loadStore();
+  const identity = await getActiveIdentity();
+  const visibleProjectIds = new Set(
+    store.projects.filter((project) => projectVisibleToIdentity(project, identity)).map((project) => project.id)
+  );
   const now = input.now ?? new Date();
   const due = store.triggers.filter(
-    (trigger) => (!input.projectId || trigger.project_id === input.projectId) && isDueProjectTrigger(trigger, now)
+    (trigger) =>
+      visibleProjectIds.has(trigger.project_id) &&
+      (!input.projectId || trigger.project_id === input.projectId) &&
+      isDueProjectTrigger(trigger, now)
   );
 
   const results: Array<{ projectId: string; runId: string }> = [];
   for (const trigger of due) {
+    const project = store.projects.find((row) => row.id === trigger.project_id);
+    if (!shouldRunScheduledProjectTrigger(project, store.research_briefs)) {
+      await markTriggerRan({ projectId: trigger.project_id, triggerId: trigger.id });
+      continue;
+    }
     const result = await triggerProjectPipeline(trigger.project_id);
-    await markTriggerRan(trigger.id);
+    await markTriggerRan({ projectId: trigger.project_id, triggerId: trigger.id });
     results.push({ projectId: trigger.project_id, runId: result.runId });
   }
   return results;

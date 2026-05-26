@@ -76,7 +76,7 @@ export function buildOpportunityNarrative(opportunity: ContractOpportunity): Opp
     story,
     taste: opportunity.tasteCritique,
     tension,
-    mvp: opportunity.mvpConcept,
+    mvp: opportunity.synthesis?.productPitch || opportunity.mvpConcept,
     prototypes: opportunity.prototypes.map((prototype) => ({
       title: prototype.title,
       status: prototype.status

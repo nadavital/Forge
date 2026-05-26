@@ -5,24 +5,35 @@ from __future__ import annotations
 import os
 import json
 import re
+import hmac
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from .clustering import cluster_opportunities
-from .collectors import CollectorConfig, collect_public_media
+from .collectors import (
+    CollectorConfig,
+    collect_public_media,
+    github_token_from_env,
+    source_plan_routing,
+)
 from .env import load_repo_env
 from .evaluate import _run_managed_evaluation
 from .interactions import ManagedAgentClient
 from .local_synthesis import (
+    synthesize_brief_opportunities,
     synthesize_opportunities,
     synthesize_seed_topics,
     synthesize_signals,
 )
-from .schemas import SourceCollectionResult
 from .schemas import BullBearEvaluation
+from .schemas import OpportunityCluster
+from .schemas import SignalRecord
+from .schemas import SourceCollectionResult
 from .schemas import TrendResearchPipelineResult
 from .supabase import SupabaseWriter
 
@@ -51,13 +62,22 @@ OPPORTUNITY_ACTIONS = {"watch", "reject", "research_more", "approve_for_build"}
 app = FastAPI(title="Forge Backend API")
 
 
+@app.middleware("http")
+async def require_api_auth(request: Request, call_next):
+    if request.url.path.startswith("/api/"):
+        detail = _managed_research_auth_error(request)
+        if detail:
+            return JSONResponse({"detail": detail}, status_code=401)
+    return await call_next(request)
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
 @app.post("/api/projects")
-def create_project(payload: dict[str, Any]) -> dict[str, Any]:
+def create_project(payload: dict[str, Any], request: Request) -> dict[str, Any]:
     mode = payload.get("mode")
     if mode not in {"new_project", "existing_project"}:
         raise HTTPException(status_code=400, detail="mode must be new_project or existing_project")
@@ -66,6 +86,7 @@ def create_project(payload: dict[str, Any]) -> dict[str, Any]:
     repo_url = payload.get("repo_url") or None
     schedule = {**DEFAULT_SCHEDULE, **(payload.get("schedule") or {})}
     writer = SupabaseWriter()
+    scope = _request_scope(request)
     project = writer.insert(
         "projects",
         [
@@ -75,6 +96,7 @@ def create_project(payload: dict[str, Any]) -> dict[str, Any]:
                 "repo_url": repo_url,
                 "description": description,
                 "product_context": payload.get("product_context"),
+                **_scope_fields(scope),
             }
         ],
     )[0]
@@ -90,26 +112,29 @@ def create_project(payload: dict[str, Any]) -> dict[str, Any]:
         ],
     )
     return {
-        "project": _project_response(writer, project["id"]),
+        "project": _project_response(writer, project["id"], scope),
         "next_recommended_action": "run_discovery",
     }
 
 
 @app.get("/api/projects")
-def list_projects() -> dict[str, Any]:
+def list_projects(request: Request) -> dict[str, Any]:
     writer = SupabaseWriter()
-    rows = writer.select("projects", "select=*&order=updated_at.desc")
-    return {"projects": [_project_response(writer, row["id"]) for row in rows]}
+    scope = _request_scope(request)
+    rows = writer.select("projects", _projects_query(scope))
+    return {"projects": [_project_response(writer, row["id"], scope) for row in rows]}
 
 
 @app.get("/api/projects/{project_id}")
-def get_project(project_id: str) -> dict[str, Any]:
-    return {"project": _project_response(SupabaseWriter(), project_id)}
+def get_project(project_id: str, request: Request) -> dict[str, Any]:
+    return {"project": _project_response(SupabaseWriter(), project_id, _request_scope(request))}
 
 
 @app.patch("/api/projects/{project_id}")
-def update_project(project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+def update_project(project_id: str, payload: dict[str, Any], request: Request) -> dict[str, Any]:
     writer = SupabaseWriter()
+    scope = _request_scope(request)
+    _project_response(writer, project_id, scope)
     allowed = {"name", "description", "repo_url", "product_context"}
     values = {key: payload[key] for key in allowed if key in payload}
     if values:
@@ -139,24 +164,25 @@ def update_project(project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
                     }
                 ],
             )
-    return {"project": _project_response(writer, project_id)}
+    return {"project": _project_response(writer, project_id, scope)}
 
 
 @app.post("/api/projects/{project_id}/brainstorm")
-def brainstorm_project(project_id: str, payload: dict[str, Any], background_tasks: BackgroundTasks) -> dict[str, Any]:
+def brainstorm_project(project_id: str, payload: dict[str, Any], background_tasks: BackgroundTasks, request: Request) -> dict[str, Any]:
     writer = SupabaseWriter()
-    _project_response(writer, project_id)
+    _project_response(writer, project_id, _request_scope(request))
     run = _create_project_run(writer, project_id, trigger="onboarding", stage="project_analysis")
     background_tasks.add_task(_background_brainstorm, project_id, run["id"], payload)
     return {"run": _run_response(run)}
 
 
 @app.post("/api/projects/{project_id}/import-github")
-def import_github(project_id: str, payload: dict[str, Any], background_tasks: BackgroundTasks) -> dict[str, Any]:
+def import_github(project_id: str, payload: dict[str, Any], background_tasks: BackgroundTasks, request: Request) -> dict[str, Any]:
     repo_url = payload.get("repo_url")
     if not repo_url:
         raise HTTPException(status_code=400, detail="repo_url is required")
     writer = SupabaseWriter()
+    _project_response(writer, project_id, _request_scope(request))
     writer.update("projects", f"id=eq.{project_id}", {"repo_url": repo_url, "updated_at": _now()})
     run = _create_project_run(writer, project_id, trigger="onboarding", stage="project_analysis")
     background_tasks.add_task(_background_import_github, project_id, run["id"], repo_url)
@@ -164,9 +190,9 @@ def import_github(project_id: str, payload: dict[str, Any], background_tasks: Ba
 
 
 @app.post("/api/projects/{project_id}/runs")
-def start_project_run(project_id: str, payload: dict[str, Any], background_tasks: BackgroundTasks) -> dict[str, Any]:
+def start_project_run(project_id: str, payload: dict[str, Any], background_tasks: BackgroundTasks, request: Request) -> dict[str, Any]:
     writer = SupabaseWriter()
-    _project_response(writer, project_id)
+    _project_response(writer, project_id, _request_scope(request))
     trigger = payload.get("trigger") or "manual"
     if trigger not in {"manual", "scheduled", "onboarding"}:
         raise HTTPException(status_code=400, detail="invalid run trigger")
@@ -175,24 +201,32 @@ def start_project_run(project_id: str, payload: dict[str, Any], background_tasks
     return {"run": _run_response(run)}
 
 
+@app.post("/api/research-briefs/run")
+def run_research_brief(payload: dict[str, Any], request: Request) -> dict[str, Any]:
+    _require_managed_research_auth(request)
+    return _run_research_brief_payload(payload, request_scope=_request_scope(request))
+
+
 @app.get("/api/projects/{project_id}/runs")
-def list_project_runs(project_id: str) -> dict[str, Any]:
+def list_project_runs(project_id: str, request: Request) -> dict[str, Any]:
     writer = SupabaseWriter()
-    _project_response(writer, project_id)
+    _project_response(writer, project_id, _request_scope(request))
     rows = writer.select("project_runs", f"select=*&project_id=eq.{project_id}&order=started_at.desc")
     return {"runs": [_run_response(row) for row in rows]}
 
 
 @app.get("/api/runs/{run_id}")
-def get_run(run_id: str) -> dict[str, Any]:
-    row = _expect_one(SupabaseWriter().select("project_runs", f"select=*&id=eq.{run_id}"), "run")
+def get_run(run_id: str, request: Request) -> dict[str, Any]:
+    writer = SupabaseWriter()
+    row = _expect_one(writer.select("project_runs", f"select=*&id=eq.{run_id}"), "run")
+    _project_response(writer, row["project_id"], _request_scope(request))
     return {"run": _run_response(row)}
 
 
 @app.get("/api/projects/{project_id}/opportunities")
-def list_opportunities(project_id: str) -> dict[str, Any]:
+def list_opportunities(project_id: str, request: Request) -> dict[str, Any]:
     writer = SupabaseWriter()
-    _project_response(writer, project_id)
+    _project_response(writer, project_id, _request_scope(request))
     rows = writer.select(
         "opportunities",
         f"select=*&project_id=eq.{project_id}&status=in.(recommended,approved,building,built,watched)&order=score.desc",
@@ -201,19 +235,19 @@ def list_opportunities(project_id: str) -> dict[str, Any]:
 
 
 @app.get("/api/opportunities/{opportunity_id}")
-def get_opportunity(opportunity_id: str) -> dict[str, Any]:
+def get_opportunity(opportunity_id: str, request: Request) -> dict[str, Any]:
     writer = SupabaseWriter()
-    row = _expect_one(writer.select("opportunities", f"select=*&id=eq.{opportunity_id}"), "opportunity")
+    row = _scoped_opportunity_row(writer, opportunity_id, request)
     return {"opportunity": _opportunity_detail(writer, row)}
 
 
 @app.post("/api/opportunities/{opportunity_id}/actions")
-def opportunity_action(opportunity_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+def opportunity_action(opportunity_id: str, payload: dict[str, Any], request: Request) -> dict[str, Any]:
     action = payload.get("action")
     if action not in OPPORTUNITY_ACTIONS:
         raise HTTPException(status_code=400, detail="invalid opportunity action")
     writer = SupabaseWriter()
-    opportunity = _expect_one(writer.select("opportunities", f"select=*&id=eq.{opportunity_id}"), "opportunity")
+    opportunity = _scoped_opportunity_row(writer, opportunity_id, request)
     status = {
         "watch": "watched",
         "reject": "rejected",
@@ -245,13 +279,11 @@ def opportunity_action(opportunity_id: str, payload: dict[str, Any]) -> dict[str
 
 
 @app.post("/api/opportunities/{opportunity_id}/builds")
-def start_build(opportunity_id: str, payload: dict[str, Any], background_tasks: BackgroundTasks) -> dict[str, Any]:
+def start_build(opportunity_id: str, payload: dict[str, Any], background_tasks: BackgroundTasks, request: Request) -> dict[str, Any]:
     writer = SupabaseWriter()
-    opportunity = _expect_one(writer.select("opportunities", f"select=*&id=eq.{opportunity_id}"), "opportunity")
+    opportunity = _scoped_opportunity_row(writer, opportunity_id, request)
     project_id = opportunity.get("project_id")
-    if not project_id:
-        raise HTTPException(status_code=400, detail="opportunity is not linked to a project")
-    project = _project_response(writer, project_id)
+    project = _project_response(writer, project_id, _request_scope(request))
     repo_url = project.get("repo_url")
     if not repo_url:
         raise HTTPException(status_code=400, detail="project repo_url is required before build")
@@ -278,8 +310,10 @@ def start_build(opportunity_id: str, payload: dict[str, Any], background_tasks: 
 
 
 @app.get("/api/builds/{build_id}")
-def get_build(build_id: str) -> dict[str, Any]:
-    build = _expect_one(SupabaseWriter().select("mvp_builds", f"select=*&id=eq.{build_id}"), "build")
+def get_build(build_id: str, request: Request) -> dict[str, Any]:
+    writer = SupabaseWriter()
+    build = _expect_one(writer.select("mvp_builds", f"select=*&id=eq.{build_id}"), "build")
+    _project_response(writer, build["project_id"], _request_scope(request))
     return {"build": _build_response(build)}
 
 
@@ -335,33 +369,42 @@ def _background_discovery_run(project_id: str, run_id: str, payload: dict[str, A
     writer = SupabaseWriter()
     try:
         project = _project_response(writer, project_id)
-        query = _discovery_query(project)
+        brief = payload.get("research_brief") if isinstance(payload.get("research_brief"), dict) else None
+        query = _brief_query(brief, project) if brief else _discovery_query(project)
         _set_project_run_stage(writer, run_id, "signal_collection")
         limit_per_source = int(payload.get("limit_per_source") or 10)
         media_items = collect_public_media(
-            CollectorConfig(
+            _collector_config_for_payload(
                 query=query,
+                payload=payload,
+                brief=brief,
                 limit_per_source=limit_per_source,
-                github_token=os.environ.get("GITHUB_TOKEN"),
-                reddit_subreddits=_csv_env(os.environ.get("FORGE_REDDIT_SUBREDDITS", "")),
             )
         )
         seed_topics = synthesize_seed_topics(media_items, max_topics=5)
         signals = synthesize_signals(media_items)
-        opportunities = synthesize_opportunities(media_items, signals, max_opportunities=8)
+        opportunities = (
+            synthesize_brief_opportunities(brief, media_items, signals, max_opportunities=8)
+            if brief
+            else synthesize_opportunities(media_items, signals, max_opportunities=8)
+        )
         if not signals or not opportunities:
             fallback_query = _fallback_discovery_query(project)
             media_items = collect_public_media(
-                CollectorConfig(
+                _collector_config_for_payload(
                     query=fallback_query,
+                    payload=payload,
+                    brief=brief,
                     limit_per_source=max(5, limit_per_source),
-                    github_token=os.environ.get("GITHUB_TOKEN"),
-                    reddit_subreddits=_csv_env(os.environ.get("FORGE_REDDIT_SUBREDDITS", "")),
                 )
             )
             seed_topics = synthesize_seed_topics(media_items, max_topics=5)
             signals = synthesize_signals(media_items)
-            opportunities = synthesize_opportunities(media_items, signals, max_opportunities=8)
+            opportunities = (
+                synthesize_brief_opportunities(brief, media_items, signals, max_opportunities=8)
+                if brief
+                else synthesize_opportunities(media_items, signals, max_opportunities=8)
+            )
             query = fallback_query
         source_result = SourceCollectionResult(
             query=query,
@@ -477,6 +520,7 @@ def _background_discovery_run(project_id: str, run_id: str, payload: dict[str, A
             "ready",
             summary,
             metadata={
+                **({"research_brief": brief} if brief else {}),
                 "source_collection": source_summary,
                 "deep_research": research_summary,
                 "opportunity_clustering": cluster_summary,
@@ -527,6 +571,92 @@ def _background_build(build_id: str) -> None:
             f"id=eq.{build_id}",
             {"status": "failed", "stage": "failed", "error": str(exc), "completed_at": _now()},
         )
+
+
+def _run_research_brief_payload(payload: dict[str, Any], request_scope: dict[str, str] | None = None) -> dict[str, Any]:
+    brief = payload.get("research_brief")
+    if not isinstance(brief, dict):
+        raise HTTPException(status_code=400, detail="research_brief is required")
+    project = payload.get("project") if isinstance(payload.get("project"), dict) else {}
+    limit_per_source = int(payload.get("limit_per_source") or 10)
+    query = _brief_query(brief, project)
+    media_items = collect_public_media(
+        _collector_config_for_payload(
+            query=query,
+            payload=payload,
+            brief=brief,
+            limit_per_source=limit_per_source,
+        )
+    )
+    signals = synthesize_signals(media_items)
+    opportunities = synthesize_brief_opportunities(
+        brief,
+        media_items,
+        signals,
+        max_opportunities=int(payload.get("max_opportunities") or 4),
+    )
+    evaluations_by_index: dict[int, BullBearEvaluation] = {}
+    if opportunities:
+        for index, opportunity in enumerate(opportunities):
+            cluster = _brief_opportunity_cluster(index, opportunity, signals)
+            if os.environ.get("FORGE_ENABLE_MANAGED_EVAL", "0") == "1":
+                try:
+                    evaluations_by_index[index] = _run_managed_evaluation(cluster, AGENTS_DIR)
+                except Exception as exc:
+                    evaluations_by_index[index] = _fallback_bull_bear_evaluation(cluster, exc)
+            else:
+                evaluations_by_index[index] = _fallback_bull_bear_evaluation(
+                    cluster,
+                    RuntimeError("Managed evaluation disabled for brief research."),
+                )
+    seed_topics = synthesize_seed_topics(media_items, max_topics=5)
+    evidence_summary = _research_evidence_summary(opportunities)
+    return {
+        "status": "completed",
+        "query": query,
+        "media_items": [item.to_metadata() for item in media_items],
+        "seed_topics": [topic.to_metadata() for topic in seed_topics],
+        "request_scope": request_scope or {},
+        "evidence_summary": evidence_summary,
+        "signals": [_signal_response(signal) for signal in signals],
+        "opportunities": [
+            _opportunity_response(opportunity, evaluations_by_index.get(index))
+            for index, opportunity in enumerate(opportunities)
+        ],
+        "summary": (
+            f"Collected {len(media_items)} public items, normalized {len(signals)} signals, "
+            f"produced {len(opportunities)} source-backed candidate opportunities "
+            f"({evidence_summary['build_ready_opportunities']} build-ready by evidence), "
+            f"and evaluated {len(evaluations_by_index)} candidate opportunities."
+        ),
+    }
+
+
+def _require_managed_research_auth(request: Request) -> None:
+    detail = _managed_research_auth_error(request)
+    if detail:
+        raise HTTPException(status_code=401, detail=detail)
+
+
+def _managed_research_auth_error(request: Request) -> str | None:
+    secret = (os.environ.get("FORGE_MANAGED_RESEARCH_SECRET") or "").strip()
+    if not secret:
+        if _allow_unauthenticated_managed_research():
+            return None
+        return "FORGE_MANAGED_RESEARCH_SECRET is required"
+    expected = f"Bearer {secret}"
+    authorization = request.headers.get("authorization", "")
+    if not hmac.compare_digest(authorization, expected):
+        return "managed research authorization required"
+    return None
+
+
+def _allow_unauthenticated_managed_research() -> bool:
+    return str(os.environ.get("FORGE_ALLOW_UNAUTHENTICATED_MANAGED_RESEARCH") or "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
 
 
 def _run_managed_builder(build: dict[str, Any]) -> dict[str, Any]:
@@ -597,21 +727,49 @@ def _extract_json_object(raw: str) -> str:
 
 
 def _fallback_bull_bear_evaluation(cluster, exc: Exception) -> BullBearEvaluation:
+    context = cluster.context or {}
+    evidence_ready = context.get("evidence_sufficient_for_build") is True
+    evidence_reason = str(context.get("evidence_sufficiency_reason") or "")
+    constraints = _context_list(context, "constraints")
+    disqualifying_evidence = _context_list(context, "disqualifying_evidence")
+    mvp_boundaries = _context_list(context, "mvp_boundaries")
+    taste_notes = _context_list(context, "user_taste_notes")
+    open_questions = _context_list(context, "open_questions")
+    required_constraints = _unique_strings([
+        *constraints,
+        "Local-first",
+        "No paid APIs",
+        "README and smoke test required",
+    ])
+    non_goals = _unique_strings([
+        *disqualifying_evidence,
+        "Production deployment",
+        "Paid API integrations",
+        "Broad platform support",
+    ])
     return BullBearEvaluation(
         cluster=cluster,
         bull={
             "position": "bull",
             "summary": (
-                f"{cluster.canonical_title} has enough linked public evidence to prototype. "
-                "The MVP is narrow and can be validated without paid services."
+                f"{cluster.canonical_title} has a narrow MVP shape and can be validated without paid services."
+                if evidence_ready
+                else f"{cluster.canonical_title} is plausible, but the evidence is not build-ready yet."
             ),
             "why_real_pain": [cluster.problem],
             "why_now": ["Developers are moving AI agent workflows from demos into production."],
-            "adoption_case": ["A local tool can be tried without replacing the user's stack."],
+            "adoption_case": [
+                "A local tool can be tried without replacing the user's stack.",
+                *([f"Matches user taste: {note}" for note in taste_notes[:2]]),
+            ],
             "smallest_convincing_mvp": cluster.mvp_concept,
             "supporting_evidence_urls": [signal.url for signal in cluster.evidence if signal.url][:5],
             "confidence": min(0.75, cluster.score),
-            "risks_to_watch": ["Managed evaluation was unavailable; human review should treat this as provisional."],
+            "risks_to_watch": [
+                "Managed evaluation was unavailable; human review should treat this as provisional.",
+                *([evidence_reason] if evidence_reason and not evidence_ready else []),
+                *open_questions[:3],
+            ],
         },
         bear={
             "position": "bear",
@@ -622,18 +780,36 @@ def _fallback_bull_bear_evaluation(cluster, exc: Exception) -> BullBearEvaluatio
             "why_might_be_noise": ["Public-source signals may overrepresent vocal developer pain."],
             "adoption_risks": ["The MVP must avoid becoming a generic platform."],
             "existing_alternatives": ["Manual scripts", "framework-specific tooling", "observability dashboards"],
-            "scope_traps": ["Supporting too many agent frameworks in the first prototype."],
-            "missing_evidence": ["Direct user interviews", "competitive pricing evidence"],
+            "scope_traps": [
+                "Supporting too many agent frameworks in the first prototype.",
+                *mvp_boundaries[1:3],
+            ],
+            "missing_evidence": _unique_strings([
+                "Direct user interviews",
+                "competitive pricing evidence",
+                *open_questions,
+            ]),
             "confidence": 0.62,
         },
         decision={
-            "recommendation": "prototype",
-            "summary": "Proceed with a narrow prototype, but label this as fallback-evaluated.",
+            "recommendation": "prototype" if evidence_ready else "research_more",
+            "summary": (
+                "Proceed with a narrow prototype, but label this as fallback-evaluated."
+                if evidence_ready
+                else f"Collect stronger public evidence before prototyping. {evidence_reason}".strip()
+            ),
             "confidence": min(0.72, cluster.score),
-            "required_mvp_constraints": ["Local-first", "No paid APIs", "README and smoke test required"],
-            "next_action": "Prepare a build prompt for a tightly scoped prototype.",
+            "required_mvp_constraints": required_constraints,
+            "next_action": (
+                "Prepare a build prompt for a tightly scoped prototype."
+                if evidence_ready
+                else "Collect more cited public-source signals and rerun evaluation."
+            ),
             "approval_needed": True,
-            "evidence_gaps": ["Managed Bull/Bear evaluation failed and should be rerun when quota is available."],
+            "evidence_gaps": _unique_strings([
+                "Managed Bull/Bear evaluation failed and should be rerun when quota is available.",
+                *([evidence_reason] if evidence_reason and not evidence_ready else []),
+            ]),
         },
         synthesis={
             "product_pitch": (
@@ -641,26 +817,58 @@ def _fallback_bull_bear_evaluation(cluster, exc: Exception) -> BullBearEvaluatio
                 f"The first MVP is: {cluster.mvp_concept}"
             ),
             "target_user": cluster.target_user,
-            "mvp_scope": [cluster.mvp_concept],
-            "non_goals": ["Production deployment", "Paid API integrations", "Broad platform support"],
+            "mvp_scope": _unique_strings([cluster.mvp_concept, *mvp_boundaries]),
+            "non_goals": non_goals,
             "builder_system_prompt": (
                 f"Build a local runnable prototype for {cluster.canonical_title}. "
                 f"Problem: {cluster.problem}. MVP: {cluster.mvp_concept}. "
+                f"Respect these constraints: {'; '.join(required_constraints)}. "
+                f"Avoid these non-goals: {'; '.join(non_goals)}. "
                 "Use free/local dependencies only. Include README, setup/run instructions, and one smoke test."
+                if evidence_ready
+                else ""
             ),
-            "builder_readiness": "ready",
+            "builder_readiness": "ready" if evidence_ready else "not_ready",
+            "readiness_reason": (
+                "Fallback evaluation cleared the configured evidence gate."
+                if evidence_ready
+                else evidence_reason or "Fallback evaluation did not have explicit build-ready evidence."
+            ),
             "confidence": min(0.72, cluster.score),
         },
         raw_outputs={"managed_error": str(exc)},
     )
 
 
-def _project_response(writer: SupabaseWriter, project_id: str) -> dict[str, Any]:
-    project = _expect_one(writer.select("projects", f"select=*&id=eq.{project_id}"), "project")
+def _research_evidence_summary(opportunities: list[Any]) -> dict[str, Any]:
+    build_ready = 0
+    needs_more = 0
+    reasons: list[str] = []
+    for opportunity in opportunities:
+        profile = opportunity.profile if isinstance(opportunity.profile, dict) else {}
+        if profile.get("evidence_sufficient_for_build") is True:
+            build_ready += 1
+        else:
+            needs_more += 1
+            reason = str(profile.get("evidence_sufficiency_reason") or "").strip()
+            if reason:
+                reasons.append(reason)
+    return {
+        "opportunities": len(opportunities),
+        "build_ready_opportunities": build_ready,
+        "needs_more_evidence_opportunities": needs_more,
+        "reasons": _unique_strings(reasons),
+    }
+
+
+def _project_response(writer: SupabaseWriter, project_id: str, scope: dict[str, str] | None = None) -> dict[str, Any]:
+    project = _expect_one(writer.select("projects", _project_query(project_id, scope)), "project")
     schedules = writer.select("project_schedules", f"select=*&project_id=eq.{project_id}&limit=1")
     runs = writer.select("project_runs", f"select=*&project_id=eq.{project_id}&order=started_at.desc&limit=1")
     return {
         "id": project["id"],
+        "owner_user_id": project.get("owner_user_id"),
+        "workspace_id": project.get("workspace_id"),
         "name": project["name"],
         "mode": project["mode"],
         "repo_url": project.get("repo_url"),
@@ -671,6 +879,58 @@ def _project_response(writer: SupabaseWriter, project_id: str) -> dict[str, Any]
         "created_at": project["created_at"],
         "updated_at": project["updated_at"],
     }
+
+
+def _scoped_opportunity_row(writer: SupabaseWriter, opportunity_id: str, request: Request) -> dict[str, Any]:
+    row = _expect_one(writer.select("opportunities", f"select=*&id=eq.{opportunity_id}"), "opportunity")
+    project_id = row.get("project_id")
+    if not project_id:
+        raise HTTPException(status_code=404, detail="opportunity not found")
+    _project_response(writer, project_id, _request_scope(request))
+    return row
+
+
+def _request_scope(request: Request) -> dict[str, str]:
+    owner_user_id = (request.headers.get("x-forge-user-id") or os.environ.get("FORGE_USER_ID") or "").strip()
+    workspace_id = (request.headers.get("x-forge-workspace-id") or os.environ.get("FORGE_WORKSPACE_ID") or "").strip()
+    return {
+        **({"owner_user_id": owner_user_id} if owner_user_id else {}),
+        **({"workspace_id": workspace_id} if workspace_id else {}),
+    }
+
+
+def _scope_fields(scope: dict[str, str]) -> dict[str, str]:
+    return {
+        key: value
+        for key, value in {
+            "owner_user_id": scope.get("owner_user_id"),
+            "workspace_id": scope.get("workspace_id"),
+        }.items()
+        if value
+    }
+
+
+def _projects_query(scope: dict[str, str] | None = None) -> str:
+    return "select=*&" + "&".join([*_scope_filters(scope), "order=updated_at.desc"])
+
+
+def _project_query(project_id: str, scope: dict[str, str] | None = None) -> str:
+    return "select=*&" + "&".join([f"id=eq.{_query_value(project_id)}", *_scope_filters(scope), "limit=1"])
+
+
+def _scope_filters(scope: dict[str, str] | None) -> list[str]:
+    if not scope:
+        return []
+    filters: list[str] = []
+    if scope.get("owner_user_id"):
+        filters.append(f"owner_user_id=eq.{_query_value(scope['owner_user_id'])}")
+    if scope.get("workspace_id"):
+        filters.append(f"workspace_id=eq.{_query_value(scope['workspace_id'])}")
+    return filters
+
+
+def _query_value(value: str) -> str:
+    return quote(value, safe="")
 
 
 def _schedule_response(row: dict[str, Any]) -> dict[str, Any]:
@@ -942,8 +1202,200 @@ def _discovery_query(project: dict[str, Any]) -> str:
     return " ".join(str(part) for part in parts if part)[:300]
 
 
+def _brief_query(brief: dict[str, Any] | None, project: dict[str, Any]) -> str:
+    if not brief:
+        return _discovery_query(project)
+    parts = [
+        brief.get("hypothesis"),
+        brief.get("pain_area"),
+        " ".join(str(item) for item in brief.get("target_users", []) if item),
+        " ".join(str(item) for item in brief.get("constraints", []) if item),
+        " ".join(str(item) for item in brief.get("source_plan", []) if item),
+        " ".join(str(item) for item in brief.get("disqualifying_evidence", []) if item),
+        " ".join(str(item) for item in brief.get("mvp_boundaries", []) if item),
+        " ".join(str(item) for item in brief.get("user_taste_notes", []) if item),
+        " ".join(str(item) for item in brief.get("open_questions", []) if item),
+        project.get("name"),
+        "developer pain public source evidence GitHub issues discussions",
+    ]
+    return " ".join(str(part) for part in parts if part)[:500]
+
+
+def _collector_config_for_payload(
+    *,
+    query: str,
+    payload: dict[str, Any],
+    brief: dict[str, Any] | None,
+    limit_per_source: int,
+) -> CollectorConfig:
+    source_plan = _brief_source_plan(brief)
+    routing = source_plan_routing(
+        source_plan,
+        default_reddit_subreddits=_csv_env(os.environ.get("FORGE_REDDIT_SUBREDDITS", "")),
+        default_stack_exchange_sites=_csv_env(os.environ.get("FORGE_STACK_EXCHANGE_SITES", "stackoverflow")),
+    )
+    return CollectorConfig(
+        query=query,
+        limit_per_source=limit_per_source,
+        github_token=_github_token_for_collection(payload),
+        reddit_subreddits=routing.reddit_subreddits,
+        stack_exchange_sites=routing.stack_exchange_sites,
+        enabled_sources=routing.enabled_sources,
+        source_plan=source_plan,
+        query_hints=routing.query_hints,
+    )
+
+
+def _brief_source_plan(brief: dict[str, Any] | None) -> tuple[str, ...]:
+    if not isinstance(brief, dict):
+        return ()
+    value = brief.get("source_plan")
+    if not isinstance(value, list):
+        return ()
+    return tuple(" ".join(str(item or "").split()) for item in value if str(item or "").strip())
+
+
 def _fallback_discovery_query(project: dict[str, Any]) -> str:
     return "AI agents developer tools production pain testing observability cost security GitHub issues"
+
+
+def _signal_response(signal) -> dict[str, Any]:
+    return {
+        "source": signal.source,
+        "title": signal.title,
+        "body": signal.body,
+        "url": signal.url,
+        "source_id": signal.source_id,
+        "author": signal.author,
+        "published_at": signal.published_at,
+        "tags": signal.tags,
+        "metadata": signal.metadata,
+    }
+
+
+def _opportunity_response(opportunity, evaluation: BullBearEvaluation | None = None) -> dict[str, Any]:
+    return {
+        "title": opportunity.title,
+        "problem": opportunity.problem,
+        "target_user": opportunity.target_user,
+        "mvp_concept": opportunity.mvp_concept,
+        "score": opportunity.score,
+        "score_rationale": opportunity.score_rationale,
+        "source_indexes": opportunity.source_indexes,
+        "profile": opportunity.profile,
+        "evaluations": _evaluation_rows(evaluation),
+    }
+
+
+def _github_token_for_collection(payload: dict[str, Any] | None = None) -> str | None:
+    token = payload.get("github_access_token") if isinstance(payload, dict) else None
+    if isinstance(token, str) and token.strip():
+        return token.strip()
+    return github_token_from_env()
+
+
+def _brief_opportunity_cluster(index: int, opportunity, signals) -> OpportunityCluster:
+    evidence = []
+    evidence_ids = []
+    for signal_index in opportunity.source_indexes:
+        if not isinstance(signal_index, int) or signal_index < 0 or signal_index >= len(signals):
+            continue
+        signal = signals[signal_index]
+        signal_id = f"brief-signal-{signal_index}"
+        evidence_ids.append(signal_id)
+        evidence.append(
+            SignalRecord(
+                id=signal_id,
+                source=signal.source,
+                title=signal.title,
+                body=signal.body,
+                url=signal.url,
+                tags=signal.tags,
+                metadata=signal.metadata,
+            )
+        )
+    return OpportunityCluster(
+        canonical_title=opportunity.title,
+        problem=opportunity.problem,
+        target_user=opportunity.target_user,
+        mvp_concept=opportunity.mvp_concept,
+        score=opportunity.score,
+        representative_opportunity_id=f"brief-opportunity-{index}",
+        merged_opportunity_ids=[f"brief-opportunity-{index}"],
+        evidence_signal_ids=evidence_ids,
+        variants=[opportunity.title],
+        tags=["research_brief", "source_collected"],
+        why_clustered="Single candidate produced from an approved research brief.",
+        evidence=evidence,
+        context=opportunity.profile if isinstance(opportunity.profile, dict) else {},
+    )
+
+
+def _context_list(context: dict[str, Any], key: str) -> list[str]:
+    value = context.get(key)
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _unique_strings(values: list[str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        cleaned = " ".join(str(value or "").split())
+        key = cleaned.lower()
+        if cleaned and key not in seen:
+            seen.add(key)
+            result.append(cleaned)
+    return result
+
+
+def _evaluation_rows(evaluation: BullBearEvaluation | None) -> list[dict[str, Any]]:
+    if not evaluation:
+        return []
+    return [
+        _evaluation_row("bull", evaluation.bull),
+        _evaluation_row("bear", evaluation.bear),
+        _evaluation_row("decision_agent", evaluation.decision),
+        _evaluation_row("synthesizer_agent", evaluation.synthesis),
+        _evaluation_row("taste_critic", {
+            "summary": evaluation.decision.get("summary")
+            or evaluation.synthesis.get("product_pitch")
+            or "Review source-backed candidate for taste fit before build.",
+            "confidence": evaluation.decision.get("confidence"),
+        }),
+    ]
+
+
+def _evaluation_row(evaluator: str, content: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "evaluator": evaluator,
+        "content": _evaluation_content(content),
+        "scores": {
+            "overall": _evaluation_score(content),
+            "recommendation": content.get("recommendation"),
+            "confidence": content.get("confidence"),
+            "payload": content,
+        },
+    }
+
+
+def _evaluation_content(content: dict[str, Any]) -> str:
+    for key in ("summary", "recommendation", "product_pitch", "position", "rationale"):
+        value = content.get(key)
+        if value:
+            return str(value)
+    return json.dumps(content, sort_keys=True)
+
+
+def _evaluation_score(content: dict[str, Any]) -> float:
+    for key in ("confidence", "score", "overall"):
+        value = content.get(key)
+        try:
+            return max(0.0, min(1.0, float(value)))
+        except (TypeError, ValueError):
+            continue
+    return 0.0
 
 
 def _csv_env(value: str) -> tuple[str, ...]:

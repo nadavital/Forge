@@ -1,4 +1,8 @@
 import type { BuildBrief } from "@/lib/build/brief";
+import type { DbGitHubConnection } from "../db/types.ts";
+import { generatedRepoConnectionCanCreate, githubConnectionCanWriteContents } from "./github-target.ts";
+import { installationTokenForConnection, userAccessTokenForConnection } from "../github/github-app.ts";
+import { githubTokenFallbackEnabled, githubTokenFromEnv } from "../github/token-fallback.ts";
 
 type BuilderFile = {
   path?: string;
@@ -16,13 +20,26 @@ type RepoRef = {
   repo: string;
 };
 
+type GitHubAccess = {
+  token: string;
+  source: "github_app" | "github_user" | "env";
+  connection?: DbGitHubConnection;
+};
+
 export async function createGitHubPrFromFiles(input: {
   brief: BuildBrief;
   files: BuilderFile[];
+  githubConnection?: DbGitHubConnection;
 }): Promise<GitHubPrResult> {
-  const token = process.env.FORGE_GITHUB_TOKEN || process.env.GITHUB_TOKEN;
-  if (!token) {
-    throw new Error("GITHUB_TOKEN or FORGE_GITHUB_TOKEN is required to create a GitHub PR from managed builder files.");
+  const access = await resolveGitHubAccessForBuildTarget(input);
+  if (!access) {
+    throw new Error(
+      input.brief.build_target.kind === "existing_repo_pr"
+        ? "A project-linked GitHub App installation token is required to create an existing-repo PR. Set FORGE_ALLOW_GITHUB_TOKEN_FALLBACK=1 only for local dev fallback."
+        : input.brief.build_target.github_connection_id
+          ? "A GitHub App installation token or GitHub user OAuth token is required to create or update the generated repository target. Set FORGE_ALLOW_GITHUB_TOKEN_FALLBACK=1 only for local dev fallback."
+          : "A GitHub connection or explicit local dev token fallback is required to create a generated repository PR."
+    );
   }
 
   const files = normalizeFiles(input.files, input.brief);
@@ -32,16 +49,16 @@ export async function createGitHubPrFromFiles(input: {
 
   const repo =
     input.brief.build_target.kind === "generated_repo_with_pr"
-      ? await ensureGeneratedRepo({ brief: input.brief, token })
+      ? await ensureGeneratedRepo({ brief: input.brief, access })
       : repoRefFromUrl(input.brief.build_target.target_repo_url);
   const repoUrl = `https://github.com/${repo.owner}/${repo.repo}`;
-  const defaultBranch = await getDefaultBranch({ repo, token });
-  const branch = await createBranch({ repo, token, baseBranch: defaultBranch, branch: input.brief.build_target.branch_name });
+  const defaultBranch = await getDefaultBranch({ repo, token: access.token });
+  const branch = await createBranch({ repo, token: access.token, baseBranch: defaultBranch, branch: input.brief.build_target.branch_name });
 
   for (const file of files) {
     await upsertFile({
       repo,
-      token,
+      token: access.token,
       branch,
       path: file.path,
       content: file.content
@@ -50,7 +67,7 @@ export async function createGitHubPrFromFiles(input: {
 
   const pr = await githubFetch<{ html_url: string }>(
     `/repos/${repo.owner}/${repo.repo}/pulls`,
-    token,
+    access.token,
     {
       method: "POST",
       body: JSON.stringify({
@@ -69,15 +86,87 @@ export async function createGitHubPrFromFiles(input: {
   };
 }
 
-async function ensureGeneratedRepo(input: { brief: BuildBrief; token: string }): Promise<RepoRef> {
+export async function resolveGitHubTokenForBuildTarget(input: {
+  brief: BuildBrief;
+  githubConnection?: DbGitHubConnection;
+}): Promise<string | null> {
+  return (await resolveGitHubAccessForBuildTarget(input))?.token ?? null;
+}
+
+export async function resolveGitHubAccessForBuildTarget(input: {
+  brief: BuildBrief;
+  githubConnection?: DbGitHubConnection;
+}): Promise<GitHubAccess | null> {
+  if (input.brief.build_target.kind === "existing_repo_pr") {
+    if (input.githubConnection?.provider === "github_app" && githubConnectionCanWriteContents(input.githubConnection)) {
+      const app = await appAccess(input.githubConnection);
+      if (app) {
+        return app;
+      }
+    }
+    return envAccess();
+  }
+  if (input.brief.build_target.github_connection_id) {
+    if (
+      githubConnectionCanWriteContents(input.githubConnection) &&
+      canUseAppAccessForGeneratedRepo(input.brief, input.githubConnection)
+    ) {
+      const app = await appAccess(input.githubConnection);
+      if (!app) {
+        return (await userAccess(input.githubConnection)) ?? envAccess();
+      }
+      return app;
+    }
+    const user = await userAccess(input.githubConnection);
+    if (user) {
+      return user;
+    }
+    return envAccess();
+  }
+  return envAccess();
+}
+
+async function appAccess(connection?: DbGitHubConnection): Promise<GitHubAccess | null> {
+  const token = await installationTokenForConnection(connection);
+  return token ? { token, source: "github_app", connection } : null;
+}
+
+async function userAccess(connection?: DbGitHubConnection): Promise<GitHubAccess | null> {
+  if (connection?.provider !== "github_oauth") {
+    return null;
+  }
+  const token = await userAccessTokenForConnection(connection);
+  return token ? { token, source: "github_user", connection } : null;
+}
+
+function canUseAppAccessForGeneratedRepo(brief: BuildBrief, connection?: DbGitHubConnection): boolean {
+  if (!connection) return false;
+  if (!brief.build_target.create_repo_if_missing) return true;
+  return (
+    connection.account_login === brief.build_target.generated_repo_owner &&
+    generatedRepoConnectionCanCreate(connection)
+  );
+}
+
+function envAccess(): GitHubAccess | null {
+  if (!githubTokenFallbackEnabled()) return null;
+  const token = githubTokenFromEnv();
+  return token ? { token, source: "env" } : null;
+}
+
+async function ensureGeneratedRepo(input: { brief: BuildBrief; access: GitHubAccess }): Promise<RepoRef> {
   const owner = input.brief.build_target.generated_repo_owner;
   const repo = input.brief.build_target.generated_repo_name;
-  const existing = await maybeGithubFetch<unknown>(`/repos/${owner}/${repo}`, input.token);
+  const existing = await maybeGithubFetch<unknown>(`/repos/${owner}/${repo}`, input.access.token);
   if (existing.ok) return { owner, repo };
+  if (!input.brief.build_target.create_repo_if_missing) {
+    throw new Error(
+      `Generated repository target ${owner}/${repo} does not exist or is not visible to the configured GitHub connection. Pre-create it, connect an organization installation that can create repos, or authorize GitHub user OAuth for user-owned generated repos.`
+    );
+  }
 
-  const user = await githubFetch<{ login: string }>(`/user`, input.token);
-  const path = owner === user.login ? "/user/repos" : `/orgs/${owner}/repos`;
-  await githubFetch(path, input.token, {
+  const path = generatedRepoCreatePath({ owner, access: input.access });
+  await githubFetch(path, input.access.token, {
     method: "POST",
     body: JSON.stringify({
       name: repo,
@@ -87,6 +176,24 @@ async function ensureGeneratedRepo(input: { brief: BuildBrief; token: string }):
     })
   });
   return { owner, repo };
+}
+
+function generatedRepoCreatePath(input: { owner: string; access: GitHubAccess }): string {
+  if (input.access.source === "github_app") {
+    const connection = input.access.connection;
+    if (connection?.account_type !== "Organization" || connection.account_login !== input.owner) {
+      throw new Error(
+        "GitHub App installation tokens can create generated repositories only for the installed organization account. Use a generated-repo org installation, a pre-created repo target, or configure GitHub user OAuth for user accounts."
+      );
+    }
+    return `/orgs/${input.owner}/repos`;
+  }
+  if (input.access.source === "github_user" && input.access.connection?.account_login !== input.owner) {
+    throw new Error(
+      "GitHub user OAuth can create generated repositories only for the authorized user account. Choose the matching generated-repo target or use an organization installation."
+    );
+  }
+  return "/user/repos";
 }
 
 async function getDefaultBranch(input: { repo: RepoRef; token: string }): Promise<string> {

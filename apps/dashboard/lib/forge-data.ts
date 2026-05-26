@@ -1,4 +1,14 @@
-import { loadStore, getProjectBundle } from "@/lib/db/repository";
+import { getActiveIdentity, getProjectBundle, loadStore } from "@/lib/db/repository";
+import { projectVisibleToIdentity, visibleProjectIdsForIdentity } from "@/lib/db/identity-scope";
+import { buildReadinessForOpportunity } from "@/lib/build/readiness";
+import { projectBuildReadiness, type ProjectBuildReadiness } from "@/lib/build/project-readiness";
+import {
+  evidenceStateLabel,
+  evidenceStateSummary,
+  mapOpportunityEvidenceState
+} from "@/lib/opportunity-evidence-state";
+import { synthesisFromEvaluations } from "@/lib/evaluation-synthesis";
+import { mapOpportunityReviewContext } from "@/lib/opportunity-review-context";
 import type {
   ContractBuild,
   ContractBuildArtifact,
@@ -8,6 +18,7 @@ import type {
   DecisionRecommendation,
   MorningDigest,
   MorningReviewProject,
+  ProjectMode,
   ReflectionProposal
 } from "@/types/forge";
 import type {
@@ -26,15 +37,19 @@ import type {
 
 export async function loadForgeProjects(): Promise<MorningReviewProject[]> {
   const store = await loadStore();
+  const identity = await getActiveIdentity();
   return Promise.all(
-    store.projects.filter((project) => !project.archived_at).map((project) => mapProject(project, store))
+    store.projects
+      .filter((project) => !project.archived_at && projectVisibleToIdentity(project, identity))
+      .map((project) => mapProject(project, store))
   );
 }
 
 export async function loadForgeProject(projectId: string): Promise<MorningReviewProject | null> {
   const store = await loadStore();
+  const identity = await getActiveIdentity();
   const project = store.projects.find((row) => row.id === projectId && !row.archived_at);
-  if (!project) {
+  if (!project || !projectVisibleToIdentity(project, identity)) {
     return null;
   }
   return mapProject(project, store);
@@ -43,6 +58,11 @@ export async function loadForgeProject(projectId: string): Promise<MorningReview
 async function mapProject(project: DbProject, store: ForgeStore): Promise<MorningReviewProject> {
   const bundle = await getProjectBundle(project.id, store);
   const latestRun = [...bundle.runs].sort((a, b) => runTime(b) - runTime(a))[0];
+  const buildPathReadiness = projectBuildReadiness({
+    project,
+    sources: bundle.sources,
+    githubConnections: bundle.githubConnections
+  });
   const runOpportunities = bundle.opportunities
     .map((opportunity) =>
       mapOpportunity(
@@ -52,7 +72,8 @@ async function mapProject(project: DbProject, store: ForgeStore): Promise<Mornin
         bundle.evaluations.filter((evaluation) => evaluation.opportunity_id === opportunity.id),
         bundle.prototypes.filter((prototype) => prototype.opportunity_id === opportunity.id),
         latestBuildForOpportunity(bundle.builds, opportunity.id),
-        bundle.artifacts
+        bundle.artifacts,
+        buildPathReadiness
       )
     )
     .sort((a, b) => opportunitySortScore(b, latestRun?.id) - opportunitySortScore(a, latestRun?.id));
@@ -67,11 +88,30 @@ async function mapProject(project: DbProject, store: ForgeStore): Promise<Mornin
     id: project.id,
     name: project.name,
     mode: projectModeLabel(project.mode),
+    modeKey: projectModeKey(project.mode),
+    needsGitHubConnection: needsGitHubConnection(project, bundle.sources),
     runStatus: runStatus(latestRun),
     signalCount: signalCount || bundle.signals.length,
     opportunities: runOpportunities,
     digest: mapDigest(latestRun, runOpportunities)
   };
+}
+
+function needsGitHubConnection(
+  project: DbProject,
+  sources: Array<{ source_type: string; connection_id?: string | null; config?: JsonObject }>
+): boolean {
+  if (project.mode !== "connected_product") {
+    return false;
+  }
+  const githubSource = sources.find((source) => source.source_type === "github");
+  const repoUrl = project.repo_url || stringConfig(githubSource?.config, "repo_url") || "";
+  return Boolean(repoUrl && !githubSource?.connection_id);
+}
+
+function stringConfig(config: JsonObject | undefined, key: string): string {
+  const value = config?.[key];
+  return typeof value === "string" ? value : "";
 }
 
 function mapOpportunity(
@@ -81,22 +121,39 @@ function mapOpportunity(
   evaluations: DbEvaluation[],
   prototypeRows: DbPrototype[],
   buildRow: DbMvpBuild | undefined,
-  artifacts: DbBuildArtifact[]
+  artifacts: DbBuildArtifact[],
+  buildPathReadiness: ProjectBuildReadiness
 ): ContractOpportunity {
   const signalsById = new Map(signals.map((signal) => [signal.id, signal]));
   const taste = findEvaluation(evaluations, "taste_critic");
   const bull = findEvaluation(evaluations, "bull");
   const bear = findEvaluation(evaluations, "bear");
   const decisionEval = findEvaluation(evaluations, "decision_agent");
+  const synthesis = synthesisFromEvaluations(evaluations);
+  const evidence = mapEvidence(links, signalsById);
+  const evidenceState = mapOpportunityEvidenceState(opportunity.profile, evidence.length);
+  const opportunityBuildReadiness = buildReadinessForOpportunity({
+    opportunity,
+    evaluations,
+    evidenceCount: evidence.length,
+    evidence
+  });
+  const buildReadiness = combineBuildReadiness(opportunityBuildReadiness, buildPathReadiness);
 
   return {
     id: opportunity.id,
     title: cleanText(opportunity.title) || "Untitled opportunity",
     score: normalizeScore(opportunity.score),
     status: cleanText(opportunity.status) || "proposed",
+    evidenceState,
+    evidenceLabel: evidenceStateLabel(evidenceState),
+    evidenceSummary: evidenceStateSummary(evidenceState, evidence.length),
+    buildReadiness,
+    reviewContext: mapOpportunityReviewContext(opportunity.profile),
     problem: cleanText(opportunity.problem) || cleanText(opportunity.score_rationale) || "No problem statement.",
     targetUser: cleanText(opportunity.target_user) || "Unknown",
     mvpConcept: cleanText(opportunity.mvp_concept) || "Not specified",
+    synthesis,
     tasteCritique:
       firstLine(taste?.content) ||
       stringFromScores(taste?.scores, "summary") ||
@@ -106,10 +163,19 @@ function mapOpportunity(
       bull: firstLine(bull?.content) || "No bull case recorded.",
       bear: firstLine(bear?.content) || "No bear case recorded."
     },
-    evidence: mapEvidence(links, signalsById),
+    evidence,
     prototypes: mapPrototypes(prototypeRows),
     build: buildRow ? mapBuild(buildRow, artifacts.filter((artifact) => artifact.mvp_build_id === buildRow.id)) : undefined
   };
+}
+
+function combineBuildReadiness(
+  opportunityReadiness: ContractOpportunity["buildReadiness"],
+  projectReadiness: ContractOpportunity["buildReadiness"]
+): ContractOpportunity["buildReadiness"] {
+  if (!opportunityReadiness.canBuild) return opportunityReadiness;
+  if (!projectReadiness.canBuild) return projectReadiness;
+  return opportunityReadiness;
 }
 
 function mapDecision(
@@ -444,6 +510,10 @@ function projectModeLabel(mode: string): string {
   return mode.replace(/_/g, " ");
 }
 
+function projectModeKey(mode: string): ProjectMode {
+  return mode === "new_product" ? "new_product" : "connected_product";
+}
+
 function runStatus(run: DbPipelineRun | undefined): string {
   if (!run) return "Not run yet";
   if (run.status === "completed" && run.completed_at) {
@@ -501,9 +571,11 @@ function formatTime(iso: string): string {
 
 export async function loadReflectionProposals(projectId?: string): Promise<ReflectionProposal[]> {
   const store = await loadStore();
+  const identity = await getActiveIdentity();
+  const visibleProjectIds = visibleProjectIdsForIdentity(store.projects, identity);
   const runs = projectId
-    ? store.reflection_runs.filter((run) => run.project_id === projectId)
-    : store.reflection_runs;
+    ? store.reflection_runs.filter((run) => run.project_id === projectId && visibleProjectIds.has(run.project_id))
+    : store.reflection_runs.filter((run) => run.project_id && visibleProjectIds.has(run.project_id));
 
   return store.reflection_proposals
     .filter((proposal) => runs.some((run) => run.id === proposal.reflection_run_id))

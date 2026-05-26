@@ -8,7 +8,7 @@ import os
 import sys
 from pathlib import Path
 
-from .collectors import CollectorConfig, collect_public_media
+from .collectors import CollectorConfig, collect_public_media, github_token_from_env
 from .env import load_repo_env
 from .extract import extract_json_object, extract_json_payload
 from .interactions import ManagedAgentClient
@@ -53,11 +53,16 @@ def main() -> None:
     parser.add_argument("--max-topics", type=int, default=3)
     parser.add_argument("--limit-per-source", type=int, default=10)
     parser.add_argument("--max-opportunities", type=int, default=5)
-    parser.add_argument("--project-id", help="Attach saved source-collect records to a Forge project UUID.")
+    parser.add_argument("--project-id", help="Attach saved pipeline records to a Forge project UUID.")
     parser.add_argument(
         "--subreddits",
         default="",
         help="Comma-separated subreddits used to scope Reddit source collection.",
+    )
+    parser.add_argument(
+        "--stack-exchange-sites",
+        default="",
+        help="Comma-separated Stack Exchange API site ids used for source collection, defaulting to stackoverflow.",
     )
     parser.add_argument(
         "--trigger",
@@ -124,7 +129,7 @@ def main() -> None:
         }
 
     if args.save:
-        summary["supabase"] = SupabaseWriter().save(result)
+        summary["supabase"] = SupabaseWriter().save(result, project_id=args.project_id)
     elif not args.dry_run:
         summary["note"] = "Dry-run by default. Pass --save to write to Supabase."
 
@@ -219,7 +224,7 @@ def run_trend_research(args: argparse.Namespace, agents_dir: Path) -> dict[str, 
         }
 
     if args.save:
-        summary["supabase"] = SupabaseWriter().save_trend_research(result)
+        summary["supabase"] = SupabaseWriter().save_trend_research(result, project_id=args.project_id)
     elif not args.dry_run:
         summary["note"] = "Dry-run by default. Pass --save to write to Supabase."
 
@@ -278,7 +283,7 @@ def run_seed_topics(args: argparse.Namespace, agents_dir: Path) -> dict[str, obj
         }
 
     if args.save:
-        summary["supabase"] = SupabaseWriter().save_seed_discovery(result)
+        summary["supabase"] = SupabaseWriter().save_seed_discovery(result, project_id=args.project_id)
     elif not args.dry_run:
         summary["note"] = "Dry-run by default. Pass --save to write to Supabase."
     return summary
@@ -327,8 +332,11 @@ def run_source_collect(args: argparse.Namespace) -> dict[str, object]:
         CollectorConfig(
             query=query,
             limit_per_source=max(1, args.limit_per_source),
-            github_token=os.environ.get("GITHUB_TOKEN"),
+            github_token=github_token_from_env(),
             reddit_subreddits=_csv(args.subreddits or os.environ.get("FORGE_REDDIT_SUBREDDITS", "")),
+            stack_exchange_sites=_csv(
+                args.stack_exchange_sites or os.environ.get("FORGE_STACK_EXCHANGE_SITES", "stackoverflow")
+            ),
         )
     )
     seed_topics = synthesize_seed_topics(media_items, max_topics=max(1, args.max_topics))

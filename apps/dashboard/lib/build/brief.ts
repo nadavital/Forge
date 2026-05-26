@@ -1,4 +1,5 @@
 import type { DbEvaluation, DbOpportunity, DbProject, DbSignal, JsonObject } from "@/lib/db/types";
+import { synthesisFromEvaluations, type EvaluationSynthesis } from "../evaluation-synthesis.ts";
 
 export type BuildBrief = JsonObject & {
   adapter: "gemini_managed" | "simulated";
@@ -6,6 +7,8 @@ export type BuildBrief = JsonObject & {
   problem: string;
   mvp_concept: string;
   target_user: string;
+  user_notes: string | null;
+  synthesis?: EvaluationSynthesis;
   project: {
     id: string;
     name: string;
@@ -15,6 +18,7 @@ export type BuildBrief = JsonObject & {
   build_target: {
     kind: "existing_repo_pr" | "generated_repo_with_pr";
     target_repo_url: string;
+    github_connection_id?: string | null;
     generated_repo_owner: string;
     generated_repo_name: string;
     branch_name: string;
@@ -48,6 +52,8 @@ type CompactBuildBrief = {
   problem: string;
   mvp_concept: string;
   target_user: string;
+  user_notes: string | null;
+  synthesis?: EvaluationSynthesis;
   project: BuildBrief["project"];
   build_target: BuildBrief["build_target"];
   template_repo_url: string;
@@ -60,13 +66,21 @@ export function createBuildBrief(input: {
   adapter: BuildBrief["adapter"];
   opportunity: DbOpportunity;
   project: DbProject;
+  githubConnectionId?: string | null;
+  githubConnectionAccountLogin?: string | null;
+  githubConnectionCanCreateRepos?: boolean;
+  userPreferenceNotes?: string | null;
   evidence: DbSignal[];
   evaluations: DbEvaluation[];
 }): BuildBrief {
   const title = clean(input.opportunity.title) || "Untitled opportunity";
+  const synthesis = synthesisFromEvaluations(input.evaluations);
   const target = buildTargetFor({
     project: input.project,
-    opportunityTitle: title
+    opportunityTitle: title,
+    githubConnectionId: input.githubConnectionId,
+    githubConnectionAccountLogin: input.githubConnectionAccountLogin,
+    githubConnectionCanCreateRepos: input.githubConnectionCanCreateRepos
   });
 
   return {
@@ -75,6 +89,8 @@ export function createBuildBrief(input: {
     problem: clean(input.opportunity.problem) || clean(input.opportunity.score_rationale) || "No problem statement.",
     mvp_concept: clean(input.opportunity.mvp_concept) || "Not specified.",
     target_user: clean(input.opportunity.target_user) || "Unknown target user",
+    user_notes: clean(input.userPreferenceNotes) || null,
+    ...(synthesis ? { synthesis } : {}),
     project: {
       id: input.project.id,
       name: input.project.name,
@@ -129,9 +145,11 @@ export function createManagedBuilderPrompt(brief: BuildBrief): string {
     "",
     "Priority order:",
     "1. Follow the human-approved opportunity.",
-    "2. Stay within the MVP concept and target user in the build brief.",
-    "3. Generate the smallest runnable prototype that proves the product wedge.",
-    "4. Use code and free services only. Do not add paid APIs, production deployments, or secret-requiring integrations.",
+    "2. Respect user preference notes before managed synthesis when they conflict.",
+    "3. Use the Synthesizer build direction when present.",
+    "4. Stay within the MVP concept and target user in the build brief.",
+    "5. Generate the smallest runnable prototype that proves the product wedge.",
+    "6. Use code and free services only. Do not add paid APIs, production deployments, or secret-requiring integrations.",
     "",
     "Required output:",
     "- Runnable app code.",
@@ -173,6 +191,18 @@ export function compactBuildBrief(brief: BuildBrief): CompactBuildBrief {
     problem: truncate(brief.problem, 700),
     mvp_concept: truncate(brief.mvp_concept, 900),
     target_user: truncate(brief.target_user, 240),
+    user_notes: brief.user_notes ? truncate(brief.user_notes, 700) : null,
+    synthesis: brief.synthesis
+      ? {
+          ...brief.synthesis,
+          productPitch: brief.synthesis.productPitch ? truncate(brief.synthesis.productPitch, 700) : undefined,
+          builderSystemPrompt: brief.synthesis.builderSystemPrompt
+            ? truncate(brief.synthesis.builderSystemPrompt, 1200)
+            : undefined,
+          mvpScope: brief.synthesis.mvpScope.map((item) => truncate(item, 240)),
+          nonGoals: brief.synthesis.nonGoals.map((item) => truncate(item, 240))
+        }
+      : undefined,
     project: brief.project,
     build_target: brief.build_target,
     template_repo_url: brief.template_repo_url,
@@ -190,10 +220,20 @@ export function compactBuildBrief(brief: BuildBrief): CompactBuildBrief {
   };
 }
 
-function buildTargetFor(input: { project: DbProject; opportunityTitle: string }): BuildBrief["build_target"] {
+function buildTargetFor(input: {
+  project: DbProject;
+  opportunityTitle: string;
+  githubConnectionId?: string | null;
+  githubConnectionAccountLogin?: string | null;
+  githubConnectionCanCreateRepos?: boolean;
+}): BuildBrief["build_target"] {
   const branchName = `forge/${slugify(input.opportunityTitle)}`;
   const repoUrl = clean(input.project.repo_url);
-  const owner = clean(process.env.FORGE_GENERATED_REPO_OWNER) || clean(process.env.FORGE_GITHUB_OWNER) || "forge-labs";
+  const owner =
+    clean(process.env.FORGE_GENERATED_REPO_OWNER) ||
+    clean(process.env.FORGE_GITHUB_OWNER) ||
+    clean(input.githubConnectionAccountLogin) ||
+    "forge-labs";
   const generatedRepoName = [
     "forge",
     slugify(input.project.name),
@@ -207,6 +247,7 @@ function buildTargetFor(input: { project: DbProject; opportunityTitle: string })
     return {
       kind: "existing_repo_pr",
       target_repo_url: repoUrl,
+      github_connection_id: input.githubConnectionId ?? null,
       generated_repo_owner: owner,
       generated_repo_name: generatedRepoName,
       branch_name: branchName,
@@ -218,11 +259,12 @@ function buildTargetFor(input: { project: DbProject; opportunityTitle: string })
   return {
     kind: "generated_repo_with_pr",
     target_repo_url: `https://github.com/${owner}/${generatedRepoName}`,
+    github_connection_id: input.githubConnectionId ?? null,
     generated_repo_owner: owner,
     generated_repo_name: generatedRepoName,
     branch_name: branchName,
     pr_title: `Build MVP: ${input.opportunityTitle}`,
-    create_repo_if_missing: true
+    create_repo_if_missing: !input.githubConnectionId || Boolean(input.githubConnectionCanCreateRepos)
   };
 }
 

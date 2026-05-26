@@ -3,8 +3,9 @@ import {
   updateMvpBuild,
   updateOpportunityStatus
 } from "@/lib/db/repository";
-import type { DbBuildArtifact, DbMvpBuild, JsonObject } from "@/lib/db/types";
+import type { DbBuildArtifact, DbGitHubConnection, DbMvpBuild, JsonObject } from "@/lib/db/types";
 import { createManagedBuilderPrompt, type BuildBrief } from "@/lib/build/brief";
+import { canUseManagedBuilderEnv } from "@/lib/build/adapter";
 import { reviewBuildArtifacts } from "@/lib/build/reviewer";
 import { createGitHubPrFromFiles } from "@/lib/build/github-pr";
 
@@ -32,7 +33,7 @@ type ManagedBuilderReport = {
 };
 
 export function canUseManagedGeminiBuilder(): boolean {
-  return Boolean(process.env.GEMINI_API_KEY);
+  return canUseManagedBuilderEnv();
 }
 
 export async function runManagedGeminiBuilder(input: {
@@ -40,29 +41,42 @@ export async function runManagedGeminiBuilder(input: {
   opportunityId: string;
   build: DbMvpBuild;
   brief: BuildBrief;
+  githubConnection?: DbGitHubConnection;
 }): Promise<void> {
   if (!process.env.GEMINI_API_KEY) {
-    await markBuildBlocked(input.build.id, "GEMINI_API_KEY is required for the Gemini managed builder.");
+    await markBuildBlocked({
+      projectId: input.projectId,
+      buildId: input.build.id,
+      reason: "GEMINI_API_KEY is required for the Gemini managed builder."
+    });
     return;
   }
 
   const timeoutMs = managedBuilderTimeoutMs();
   const startedAt = Date.now();
 
-  await updateMvpBuild(input.build.id, {
-    status: "building",
-    logs: [
-      "Build brief prepared. Launching compact Gemini managed builder.",
-      `Target repo: ${input.brief.build_target.target_repo_url}`,
-      `Branch: ${input.brief.build_target.branch_name}`,
-      `Timeout: ${Math.round(timeoutMs / 1000)}s`,
-      `Repo attached to managed context: ${shouldAttachRepo(input.brief) ? "yes" : "no"}`
-    ].join("\n")
+  await updateMvpBuild({
+    projectId: input.projectId,
+    buildId: input.build.id,
+    patch: {
+      status: "building",
+      logs: [
+        "Build brief prepared. Launching compact Gemini managed builder.",
+        `Target repo: ${input.brief.build_target.target_repo_url}`,
+        `Branch: ${input.brief.build_target.branch_name}`,
+        `Timeout: ${Math.round(timeoutMs / 1000)}s`,
+        `Repo attached to managed context: ${shouldAttachRepo(input.brief) ? "yes" : "no"}`
+      ].join("\n")
+    }
   });
 
   try {
     const report = await invokeManagedAgent(input.brief, timeoutMs);
-    const finalized = await finalizePr({ brief: input.brief, report });
+    const finalized = await finalizePr({
+      brief: input.brief,
+      report,
+      githubConnection: input.githubConnection
+    });
     if (!finalized.pr_url) {
       throw new Error("Managed builder finished without PR metadata or files Forge could turn into a PR.");
     }
@@ -70,48 +84,69 @@ export async function runManagedGeminiBuilder(input: {
     const artifacts = normalizeArtifacts(report);
     const review = reviewBuildArtifacts(artifacts);
     if (!review.passed) {
-      await insertBuildArtifacts(input.build.id, [
+      await insertBuildArtifacts({
+        projectId: input.projectId,
+        buildId: input.build.id,
+        artifacts: [
+          ...artifacts,
+          {
+            artifact_type: "build_review",
+            content: review.summary,
+            metadata: { missing: review.missing }
+          }
+        ]
+      });
+      throw new Error(review.summary);
+    }
+
+    await updateMvpBuild({
+      projectId: input.projectId,
+      buildId: input.build.id,
+      patch: {
+        status: "reviewing",
+        generated_repo_url: finalized.generated_repo_url,
+        branch: finalized.branch,
+        pr_url: finalized.pr_url,
+        logs: [
+          finalized.logs || "Managed builder returned PR metadata. BuildReviewer artifacts recorded.",
+          `Elapsed: ${Math.round((Date.now() - startedAt) / 1000)}s`
+        ].join("\n")
+      }
+    });
+
+    await insertBuildArtifacts({
+      projectId: input.projectId,
+      buildId: input.build.id,
+      artifacts: [
         ...artifacts,
         {
           artifact_type: "build_review",
           content: review.summary,
           metadata: { missing: review.missing }
         }
-      ]);
-      throw new Error(review.summary);
-    }
-
-    await updateMvpBuild(input.build.id, {
-      status: "reviewing",
-      generated_repo_url: finalized.generated_repo_url,
-      branch: finalized.branch,
-      pr_url: finalized.pr_url,
-      logs: [
-        finalized.logs || "Managed builder returned PR metadata. BuildReviewer artifacts recorded.",
-        `Elapsed: ${Math.round((Date.now() - startedAt) / 1000)}s`
-      ].join("\n")
+      ]
     });
 
-    await insertBuildArtifacts(input.build.id, [
-      ...artifacts,
-      {
-        artifact_type: "build_review",
-        content: review.summary,
-        metadata: { missing: review.missing }
+    await updateMvpBuild({
+      projectId: input.projectId,
+      buildId: input.build.id,
+      patch: {
+        status: "completed",
+        logs: [
+          finalized.logs || "Managed builder completed and opened a pull request.",
+          `Elapsed: ${Math.round((Date.now() - startedAt) / 1000)}s`
+        ].join("\n")
       }
-    ]);
-
-    await updateMvpBuild(input.build.id, {
-      status: "completed",
-      logs: [
-        finalized.logs || "Managed builder completed and opened a pull request.",
-        `Elapsed: ${Math.round((Date.now() - startedAt) / 1000)}s`
-      ].join("\n")
     });
-    await updateOpportunityStatus(input.opportunityId, "built");
+    await updateOpportunityStatus({
+      projectId: input.projectId,
+      opportunityId: input.opportunityId,
+      status: "built"
+    });
   } catch (error) {
     if (isTimeoutError(error) && process.env.FORGE_MANAGED_TIMEOUT_FALLBACK !== "0") {
       await completeWithTimeoutFallback({
+        projectId: input.projectId,
         build: input.build,
         brief: input.brief,
         opportunityId: input.opportunityId,
@@ -122,20 +157,29 @@ export async function runManagedGeminiBuilder(input: {
     }
 
     const message = error instanceof Error ? error.message : String(error);
-    await updateMvpBuild(input.build.id, {
-      status: "failed",
-      logs: [
-        `Managed builder failed: ${message}`,
-        `Elapsed: ${Math.round((Date.now() - startedAt) / 1000)}s`
-      ].join("\n")
+    await updateMvpBuild({
+      projectId: input.projectId,
+      buildId: input.build.id,
+      patch: {
+        status: "failed",
+        logs: [
+          `Managed builder failed: ${message}`,
+          `Elapsed: ${Math.round((Date.now() - startedAt) / 1000)}s`
+        ].join("\n")
+      }
     });
-    await updateOpportunityStatus(input.opportunityId, "approved");
+    await updateOpportunityStatus({
+      projectId: input.projectId,
+      opportunityId: input.opportunityId,
+      status: "approved"
+    });
   }
 }
 
 async function finalizePr(input: {
   brief: BuildBrief;
   report: ManagedBuilderReport;
+  githubConnection?: DbGitHubConnection;
 }): Promise<ManagedBuilderReport & { generated_repo_url: string; branch: string; pr_url: string }> {
   if (input.report.pr_url) {
     return {
@@ -149,7 +193,8 @@ async function finalizePr(input: {
 
   const materialized = await createGitHubPrFromFiles({
     brief: input.brief,
-    files: input.report.files || []
+    files: input.report.files || [],
+    githubConnection: input.githubConnection
   });
 
   return {
@@ -225,6 +270,7 @@ function managedEnvironment(brief: BuildBrief): JsonObject | string {
 }
 
 async function completeWithTimeoutFallback(input: {
+  projectId: string;
   build: DbMvpBuild;
   brief: BuildBrief;
   opportunityId: string;
@@ -238,29 +284,41 @@ async function completeWithTimeoutFallback(input: {
   const artifacts = normalizeArtifacts(report);
   const review = reviewBuildArtifacts(artifacts);
 
-  await insertBuildArtifacts(input.build.id, [
-    ...artifacts,
-    {
-      artifact_type: "build_review",
-      content: review.summary,
-      metadata: { missing: review.missing, fallback: "managed_timeout" }
-    }
-  ]);
-
-  await updateMvpBuild(input.build.id, {
-    status: review.passed ? "completed" : "reviewing",
-    generated_repo_url: finalized.generated_repo_url,
-    branch: finalized.branch,
-    pr_url: finalized.pr_url,
-    logs: [
-      `Gemini/Antigravity timed out after ${timeoutSeconds}s before returning files.`,
-      "Forge created a transparent fallback PR from the approved build brief so the build request does not dead-end.",
-      `Elapsed: ${elapsedSeconds}s`,
-      `PR: ${finalized.pr_url}`
-    ].join("\n")
+  await insertBuildArtifacts({
+    projectId: input.projectId,
+    buildId: input.build.id,
+    artifacts: [
+      ...artifacts,
+      {
+        artifact_type: "build_review",
+        content: review.summary,
+        metadata: { missing: review.missing, fallback: "managed_timeout" }
+      }
+    ]
   });
 
-  await updateOpportunityStatus(input.opportunityId, review.passed ? "built" : "approved");
+  await updateMvpBuild({
+    projectId: input.projectId,
+    buildId: input.build.id,
+    patch: {
+      status: review.passed ? "completed" : "reviewing",
+      generated_repo_url: finalized.generated_repo_url,
+      branch: finalized.branch,
+      pr_url: finalized.pr_url,
+      logs: [
+        `Gemini/Antigravity timed out after ${timeoutSeconds}s before returning files.`,
+        "Forge created a transparent fallback PR from the approved build brief so the build request does not dead-end.",
+        `Elapsed: ${elapsedSeconds}s`,
+        `PR: ${finalized.pr_url}`
+      ].join("\n")
+    }
+  });
+
+  await updateOpportunityStatus({
+    projectId: input.projectId,
+    opportunityId: input.opportunityId,
+    status: review.passed ? "built" : "approved"
+  });
 }
 
 function createTimeoutFallbackReport(brief: BuildBrief, timeoutSeconds: number): ManagedBuilderReport {
@@ -587,10 +645,18 @@ function extractReadmeSection(content: string, heading: string): string {
   return pattern.exec(content)?.[2]?.trim().slice(0, 2000) || "";
 }
 
-async function markBuildBlocked(buildId: string, reason: string): Promise<void> {
-  await updateMvpBuild(buildId, {
-    status: "blocked",
-    logs: reason
+async function markBuildBlocked(input: {
+  projectId: string;
+  buildId: string;
+  reason: string;
+}): Promise<void> {
+  await updateMvpBuild({
+    projectId: input.projectId,
+    buildId: input.buildId,
+    patch: {
+      status: "blocked",
+      logs: input.reason
+    }
   });
 }
 

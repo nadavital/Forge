@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from dataclasses import dataclass
-from typing import Any
+from html import unescape
+from typing import Any, Mapping
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -14,6 +16,7 @@ from .schemas import MediaItem
 
 
 USER_AGENT = "ForgeManagedResearch/0.1"
+DEFAULT_COLLECTOR_SOURCES = ("hacker_news", "reddit", "stack_exchange", "github")
 
 
 @dataclass
@@ -22,18 +25,46 @@ class CollectorConfig:
     limit_per_source: int = 10
     github_token: str | None = None
     reddit_subreddits: tuple[str, ...] = ()
+    stack_exchange_sites: tuple[str, ...] = ("stackoverflow",)
+    enabled_sources: tuple[str, ...] = DEFAULT_COLLECTOR_SOURCES
+    source_plan: tuple[str, ...] = ()
+    query_hints: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class SourcePlanRouting:
+    enabled_sources: tuple[str, ...]
+    reddit_subreddits: tuple[str, ...]
+    stack_exchange_sites: tuple[str, ...]
+    query_hints: tuple[str, ...]
+
+
+def github_token_from_env(env: Mapping[str, str | None] = os.environ) -> str | None:
+    """Return a broad GitHub token only when the local-dev fallback is explicit."""
+    if str(env.get("FORGE_ALLOW_GITHUB_TOKEN_FALLBACK") or "").lower() not in {"1", "true", "yes"}:
+        return None
+    if str(env.get("FORGE_REQUIRE_AUTH") or "").lower() in {"1", "true", "yes"}:
+        return None
+    return (env.get("FORGE_GITHUB_TOKEN") or env.get("GITHUB_TOKEN") or "").strip() or None
 
 
 def collect_public_media(config: CollectorConfig) -> list[MediaItem]:
     """Collect public media from cheap deterministic sources."""
+    collector_map = [
+        ("hacker_news", collect_hacker_news),
+        ("reddit", collect_reddit),
+        ("stack_exchange", collect_stack_exchange),
+        ("github", collect_github_issues),
+    ]
+    enabled = set(config.enabled_sources or DEFAULT_COLLECTOR_SOURCES)
     collectors = [
-        collect_hacker_news,
-        collect_reddit,
-        collect_github_issues,
+        (source, collector)
+        for source, collector in collector_map
+        if source in enabled
     ]
     items: list[MediaItem] = []
     seen_urls: set[str] = set()
-    for collector in collectors:
+    for source, collector in collectors:
         try:
             for item in collector(config):
                 key = item.url or f"{item.source}:{item.title}"
@@ -42,16 +73,65 @@ def collect_public_media(config: CollectorConfig) -> list[MediaItem]:
                 seen_urls.add(key)
                 items.append(item)
         except Exception as exc:  # pragma: no cover - network variance
+            error = redact_sensitive_text(str(exc), config.github_token)
             items.append(
                 MediaItem(
                     source="collector_error",
                     title=f"{collector.__name__} failed",
-                    summary=str(exc),
+                    summary=error,
                     tags=["collector_error"],
-                    metadata={"collector": collector.__name__, "error": str(exc)},
+                    metadata={
+                        "collector": collector.__name__,
+                        "source": source,
+                        "error": error,
+                        **_source_plan_metadata(config),
+                    },
                 )
             )
     return items
+
+
+def source_plan_routing(
+    source_plan: list[str] | tuple[str, ...],
+    *,
+    default_reddit_subreddits: tuple[str, ...] = (),
+    default_stack_exchange_sites: tuple[str, ...] = ("stackoverflow",),
+) -> SourcePlanRouting:
+    """Convert a user-approved source plan into deterministic collector targets."""
+    plan_items = tuple(item for item in (_clean_plan_item(item) for item in source_plan) if item)
+    text = " ".join(plan_items).lower()
+    tokens = set(re.findall(r"[a-z0-9_]+", text))
+    enabled: list[str] = []
+    if "hn" in tokens or any(term in text for term in ("hacker news", "y combinator", "news.ycombinator")):
+        enabled.append("hacker_news")
+    if any(term in text for term in ("reddit", "subreddit", " r/")) or _extract_subreddits(plan_items):
+        enabled.append("reddit")
+    stack_terms = (
+        "stack overflow",
+        "stackoverflow",
+        "stack exchange",
+        "stackexchange",
+        "server fault",
+        "serverfault",
+        "superuser",
+    )
+    if any(term in text for term in stack_terms):
+        enabled.append("stack_exchange")
+    if any(term in text for term in ("github", "git hub", "repo", "repository", "issue tracker", "issues")):
+        enabled.append("github")
+    if _mentions_public_discussions(text):
+        enabled.extend(DEFAULT_COLLECTOR_SOURCES)
+
+    enabled_sources = _unique_source_names(enabled) or DEFAULT_COLLECTOR_SOURCES
+    reddit_subreddits = _unique_values([*default_reddit_subreddits, *_extract_subreddits(plan_items)])
+    stack_exchange_sites = _unique_values([*default_stack_exchange_sites, *_extract_stack_exchange_sites(plan_items)])
+    query_hints = plan_items[:6]
+    return SourcePlanRouting(
+        enabled_sources=enabled_sources,
+        reddit_subreddits=reddit_subreddits,
+        stack_exchange_sites=stack_exchange_sites or ("stackoverflow",),
+        query_hints=query_hints,
+    )
 
 
 def collect_hacker_news(config: CollectorConfig) -> list[MediaItem]:
@@ -83,6 +163,8 @@ def collect_hacker_news(config: CollectorConfig) -> list[MediaItem]:
                     "points": hit.get("points"),
                     "num_comments": hit.get("num_comments"),
                     "content_type": "discussion",
+                    "source_query": config.query,
+                    **_source_plan_metadata(config),
                 },
             )
         )
@@ -137,6 +219,7 @@ def collect_reddit(config: CollectorConfig) -> list[MediaItem]:
                         "content_type": "discussion",
                         "reddit_id": post.get("id"),
                         "source_query": config.query,
+                        **_source_plan_metadata(config),
                     },
                 )
             )
@@ -156,9 +239,8 @@ def collect_github_issues(config: CollectorConfig) -> list[MediaItem]:
     )
     url = f"https://api.github.com/search/issues?{query}"
     headers = {}
-    token = config.github_token or os.environ.get("GITHUB_TOKEN")
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
+    if config.github_token:
+        headers["Authorization"] = f"Bearer {config.github_token}"
     payload = _get_json(url, headers=headers)
     items: list[MediaItem] = []
     for issue in payload.get("items", [])[: config.limit_per_source]:
@@ -183,9 +265,66 @@ def collect_github_issues(config: CollectorConfig) -> list[MediaItem]:
                     "state": issue.get("state"),
                     "comments": issue.get("comments"),
                     "content_type": "issue",
+                    "source_query": config.query,
+                    **_source_plan_metadata(config),
                 },
             )
         )
+    return items
+
+
+def collect_stack_exchange(config: CollectorConfig) -> list[MediaItem]:
+    """Search Stack Exchange questions for durable developer pain signals."""
+    items: list[MediaItem] = []
+    sites = [site.strip() for site in config.stack_exchange_sites if site.strip()]
+    for site in sites or ["stackoverflow"]:
+        query = urlencode(
+            {
+                "order": "desc",
+                "sort": "activity",
+                "q": config.query,
+                "site": site,
+                "pagesize": max(1, config.limit_per_source),
+                "filter": "withbody",
+            }
+        )
+        payload = _get_json(f"https://api.stackexchange.com/2.3/search/advanced?{query}")
+        for question in payload.get("items", [])[: config.limit_per_source]:
+            if not isinstance(question, dict):
+                continue
+            body = str(question.get("body_markdown") or question.get("body") or "")
+            summary = _compact_text(_html_to_text(body)) or str(question.get("title") or "Untitled Stack Exchange question")
+            owner = question.get("owner") if isinstance(question.get("owner"), dict) else {}
+            tags = [
+                str(tag)
+                for tag in question.get("tags", [])
+                if tag
+            ]
+            items.append(
+                MediaItem(
+                    source="stack_exchange",
+                    title=str(question.get("title") or "Untitled Stack Exchange question"),
+                    url=question.get("link"),
+                    summary=summary,
+                    captured_text=summary,
+                    published_at=_epoch_to_iso(question.get("last_activity_date") or question.get("creation_date")),
+                    tags=["stack_exchange", site, *_query_tags(config.query), *tags[:5]],
+                    metadata={
+                        "site": site,
+                        "question_id": question.get("question_id"),
+                        "author": owner.get("display_name"),
+                        "score": question.get("score"),
+                        "answer_count": question.get("answer_count"),
+                        "view_count": question.get("view_count"),
+                        "is_answered": question.get("is_answered"),
+                        "content_type": "question",
+                        "source_query": config.query,
+                        **_source_plan_metadata(config),
+                    },
+                )
+            )
+            if len(items) >= config.limit_per_source:
+                return items
     return items
 
 
@@ -208,6 +347,29 @@ def _compact_text(value: str, limit: int = 700) -> str:
     return text[: limit - 3].rstrip() + "..."
 
 
+def _epoch_to_iso(value: Any) -> str | None:
+    if not isinstance(value, (int, float)):
+        return None
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(value))
+
+
+def _html_to_text(value: str) -> str:
+    text = re.sub(r"<[^>]+>", " ", value)
+    return unescape(text)
+
+
+def redact_sensitive_text(value: str, *secrets: str | None) -> str:
+    redacted = str(value)
+    for secret in secrets:
+        clean = (secret or "").strip()
+        if clean:
+            redacted = redacted.replace(clean, "[REDACTED]")
+    redacted = re.sub(r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s,;\"']+", r"\1[REDACTED]", redacted)
+    redacted = re.sub(r"(?i)(github_access_token\s*[:=]\s*)[^\s,;\"']+", r"\1[REDACTED]", redacted)
+    redacted = re.sub(r"(?i)(access_token\s*[:=]\s*)[^\s,;\"']+", r"\1[REDACTED]", redacted)
+    return redacted
+
+
 def _query_tags(query: str) -> list[str]:
     tags = []
     for word in query.lower().replace("-", " ").split():
@@ -215,3 +377,68 @@ def _query_tags(query: str) -> list[str]:
         if len(cleaned) >= 4 and cleaned not in tags:
             tags.append(cleaned)
     return tags[:5]
+
+
+def _source_plan_metadata(config: CollectorConfig) -> dict[str, Any]:
+    metadata: dict[str, Any] = {}
+    if config.source_plan:
+        metadata["source_plan"] = list(config.source_plan)
+    if config.query_hints:
+        metadata["source_plan_query_hints"] = list(config.query_hints)
+    if config.enabled_sources != DEFAULT_COLLECTOR_SOURCES:
+        metadata["enabled_sources"] = list(config.enabled_sources)
+    return metadata
+
+
+def _clean_plan_item(value: Any) -> str:
+    return " ".join(str(value or "").strip().split())
+
+
+def _extract_subreddits(plan_items: tuple[str, ...]) -> tuple[str, ...]:
+    subreddits: list[str] = []
+    for item in plan_items:
+        for match in re.finditer(r"(?:^|[\s,;(/])r/([A-Za-z0-9_][A-Za-z0-9_]{1,20})", item):
+            subreddits.append(match.group(1))
+    return _unique_values(subreddits)
+
+
+def _extract_stack_exchange_sites(plan_items: tuple[str, ...]) -> tuple[str, ...]:
+    site_aliases = {
+        "stackoverflow": "stackoverflow",
+        "stack overflow": "stackoverflow",
+        "serverfault": "serverfault",
+        "server fault": "serverfault",
+        "superuser": "superuser",
+        "stackapps": "stackapps",
+        "stack apps": "stackapps",
+    }
+    text = " ".join(plan_items).lower()
+    return _unique_values([site for alias, site in site_aliases.items() if alias in text])
+
+
+def _mentions_public_discussions(text: str) -> bool:
+    audience_terms = ("developer", "developers", "founder", "founders", "builder", "builders", "startup", "product")
+    public_terms = ("public", "open", "online")
+    broad_discussion_terms = ("discussion", "discussions", "community", "communities", "forum", "forums")
+    public_discussion_terms = (*broad_discussion_terms, "posts", "threads")
+    if any(term in text for term in public_terms) and any(term in text for term in public_discussion_terms):
+        return True
+    return any(term in text for term in audience_terms) and any(term in text for term in broad_discussion_terms)
+
+
+def _unique_source_names(values: list[str]) -> tuple[str, ...]:
+    allowed = set(DEFAULT_COLLECTOR_SOURCES)
+    selected = set(value for value in _unique_values(values) if value in allowed)
+    return tuple(source for source in DEFAULT_COLLECTOR_SOURCES if source in selected)
+
+
+def _unique_values(values: list[str] | tuple[str, ...]) -> tuple[str, ...]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        cleaned = _clean_plan_item(value).strip().strip("/")
+        key = cleaned.lower()
+        if cleaned and key not in seen:
+            seen.add(key)
+            result.append(cleaned)
+    return tuple(result)

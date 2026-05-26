@@ -4,6 +4,8 @@ from forge_managed_research.clustering import cluster_opportunities
 from forge_managed_research.evaluate import _evaluation_from_fixture
 from forge_managed_research.schemas import OpportunityRecord, SignalRecord
 
+FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
+
 
 def test_cluster_opportunities_groups_duplicate_cost_ideas():
     signals = {
@@ -67,7 +69,7 @@ def test_bull_bear_fixture_parses_synthesis():
         {},
         max_clusters=1,
     )[0]
-    raw_text = Path("tests/fixtures/bull_bear_output.md").read_text()
+    raw_text = (FIXTURES_DIR / "bull_bear_output.md").read_text()
 
     result = _evaluation_from_fixture(cluster, raw_text)
 

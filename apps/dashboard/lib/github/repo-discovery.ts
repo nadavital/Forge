@@ -1,5 +1,8 @@
 import type { DbEvaluation, DbOpportunity, DbSignal, JsonObject } from "@/lib/db/types";
+import type { DbGitHubConnection } from "@/lib/db/types";
 import { runAntigravityRepoAnalysis } from "@/lib/github/repo-analysis-agent";
+import { installationTokenForConnection } from "@/lib/github/github-app";
+import { githubTokenFallbackEnabled, githubTokenFromEnv } from "@/lib/github/token-fallback";
 
 type GitHubRepo = {
   name: string;
@@ -48,14 +51,18 @@ export type RepoDiscoveryResult = {
 
 const ISSUE_LIMIT = 30;
 
-export async function discoverGitHubRepo(repoUrl: string): Promise<RepoDiscoveryResult> {
+export async function discoverGitHubRepo(
+  repoUrl: string,
+  options: { connection?: DbGitHubConnection } = {}
+): Promise<RepoDiscoveryResult> {
   const repoRef = parseGitHubRepo(repoUrl);
+  const token = (await installationTokenForConnection(options.connection)) ?? envDiscoveryToken();
   const [repo, readme, issues] = await Promise.all([
-    fetchGitHub<GitHubRepo>(`/repos/${repoRef.owner}/${repoRef.name}`),
-    fetchReadme(repoRef.owner, repoRef.name),
-    fetchIssues(repoRef.owner, repoRef.name)
+    fetchGitHub<GitHubRepo>(`/repos/${repoRef.owner}/${repoRef.name}`, token),
+    fetchReadme(repoRef.owner, repoRef.name, token),
+    fetchIssues(repoRef.owner, repoRef.name, token)
   ]);
-  const tree = await fetchRepoTree(repoRef.owner, repoRef.name, repo.default_branch);
+  const tree = await fetchRepoTree(repoRef.owner, repoRef.name, repo.default_branch, token);
 
   const productText = compact([repo.description, readme].filter(Boolean).join("\n\n"), 2200);
   const issueSignals = issues
@@ -119,6 +126,10 @@ export async function discoverGitHubRepo(repoUrl: string): Promise<RepoDiscovery
   };
 }
 
+function envDiscoveryToken(): string | undefined {
+  return githubTokenFallbackEnabled() ? githubTokenFromEnv() ?? undefined : undefined;
+}
+
 function buildRepoScan(
   repo: GitHubRepo,
   issues: GitHubIssue[],
@@ -160,9 +171,9 @@ function issueEvidenceScore(issue: GitHubIssue): number {
   return (issue.body?.trim().length ?? 0) / 120 + (issue.labels?.length ?? 0) * 2 + issue.comments * 3;
 }
 
-async function fetchReadme(owner: string, name: string): Promise<string> {
+async function fetchReadme(owner: string, name: string, token?: string | null): Promise<string> {
   try {
-    const payload = await fetchGitHub<{ content?: string; encoding?: string }>(`/repos/${owner}/${name}/readme`);
+    const payload = await fetchGitHub<{ content?: string; encoding?: string }>(`/repos/${owner}/${name}/readme`, token);
     if (payload.encoding === "base64" && payload.content) {
       return Buffer.from(payload.content, "base64").toString("utf8");
     }
@@ -172,18 +183,27 @@ async function fetchReadme(owner: string, name: string): Promise<string> {
   return "";
 }
 
-async function fetchIssues(owner: string, name: string): Promise<GitHubIssue[]> {
+async function fetchIssues(owner: string, name: string, token?: string | null): Promise<GitHubIssue[]> {
   try {
-    return await fetchGitHub<GitHubIssue[]>(`/repos/${owner}/${name}/issues?state=all&per_page=${ISSUE_LIMIT}&sort=updated`);
+    return await fetchGitHub<GitHubIssue[]>(
+      `/repos/${owner}/${name}/issues?state=all&per_page=${ISSUE_LIMIT}&sort=updated`,
+      token
+    );
   } catch {
     return [];
   }
 }
 
-async function fetchRepoTree(owner: string, name: string, branch = "main"): Promise<GitHubTreeEntry[]> {
+async function fetchRepoTree(
+  owner: string,
+  name: string,
+  branch = "main",
+  token?: string | null
+): Promise<GitHubTreeEntry[]> {
   try {
     const payload = await fetchGitHub<{ tree?: GitHubTreeEntry[] }>(
-      `/repos/${owner}/${name}/git/trees/${encodeURIComponent(branch)}?recursive=1`
+      `/repos/${owner}/${name}/git/trees/${encodeURIComponent(branch)}?recursive=1`,
+      token
     );
     return Array.isArray(payload.tree) ? payload.tree.slice(0, 500) : [];
   } catch {
@@ -191,8 +211,7 @@ async function fetchRepoTree(owner: string, name: string, branch = "main"): Prom
   }
 }
 
-async function fetchGitHub<T>(path: string): Promise<T> {
-  const token = process.env.GITHUB_TOKEN;
+async function fetchGitHub<T>(path: string, token?: string | null): Promise<T> {
   const response = await fetch(`https://api.github.com${path}`, {
     headers: {
       Accept: "application/vnd.github+json",

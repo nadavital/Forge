@@ -401,6 +401,7 @@ class OpportunityCluster:
     tags: list[str]
     why_clustered: str
     evidence: list[SignalRecord] = field(default_factory=list)
+    context: dict[str, Any] = field(default_factory=dict)
 
     def to_metadata(self) -> dict[str, Any]:
         return {
@@ -415,6 +416,7 @@ class OpportunityCluster:
             "variants": self.variants,
             "tags": self.tags,
             "why_clustered": self.why_clustered,
+            "context": self.context,
             "evidence": [
                 {
                     "id": signal.id,

@@ -3,15 +3,16 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { archiveProjectRecord, createProjectRecord } from "@/lib/db/repository";
-import { ensureProjectGitHubRepo } from "@/lib/github/repo-create";
+import { startIdeaConversation } from "@/lib/ideas/idea-conversation";
 import { triggerProjectPipeline } from "@/lib/pipeline";
-import { normalizeGithubRepository } from "@/lib/project-onboarding";
+import { planProjectCreation } from "@/lib/project-create-plan";
 import type { ProjectMode } from "@/types/forge";
 
 type CreateProjectInput = {
   name: string;
   mode: ProjectMode;
   repoUrl?: string;
+  initialIdea?: string;
   productUrl?: string;
   description?: string;
   markets?: string;
@@ -27,21 +28,16 @@ export async function createProject(input: CreateProjectInput) {
     return { ok: false as const, message: "Give the project a name." };
   }
 
-  const cleanedRepoUrl = input.repoUrl?.trim();
-  if (cleanedRepoUrl && !normalizeGithubRepository(cleanedRepoUrl)) {
-    return { ok: false as const, message: "Use a GitHub repository URL like https://github.com/org/repo." };
+  const plan = planProjectCreation({ repoUrl: input.repoUrl });
+  if (!plan.ok) {
+    return { ok: false as const, message: plan.message };
   }
-  const repoUrl = await ensureProjectGitHubRepo({
-    projectName: trimmed,
-    repoUrl: cleanedRepoUrl,
-    description: input.description
-  });
-  const mode: ProjectMode = "connected_product";
 
   const project = await createProjectRecord({
     name: trimmed,
-    mode,
-    repoUrl,
+    mode: plan.mode,
+    repoUrl: plan.repoUrl,
+    githubConnectionRequired: plan.shouldConnectGitHubFirst,
     productUrl: input.productUrl,
     description: input.description,
     markets: splitList(input.markets),
@@ -50,7 +46,15 @@ export async function createProject(input: CreateProjectInput) {
     scheduleCadence: input.scheduleCadence
   });
 
-  await triggerProjectPipeline(project.id);
+  if (plan.shouldRunInitialPipeline) {
+    await triggerProjectPipeline(project.id);
+  }
+  if (plan.shouldStartIdeaConversation && input.initialIdea?.trim()) {
+    await startIdeaConversation({
+      projectId: project.id,
+      message: input.initialIdea.trim()
+    });
+  }
 
   revalidatePath("/");
   revalidatePath(`/projects/${project.id}`);

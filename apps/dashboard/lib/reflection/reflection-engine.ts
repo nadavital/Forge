@@ -1,8 +1,10 @@
 import {
   createReflectionRun,
+  getActiveIdentity,
   getProjectBundle,
   loadStore
 } from "@/lib/db/repository";
+import { projectVisibleToIdentity } from "@/lib/db/identity-scope";
 import type {
   DbMvpBuild,
   DbPreferenceEvent,
@@ -21,9 +23,10 @@ export async function runReflection(input: { projectId?: string } = {}): Promise
   proposalCount: number;
 }> {
   const store = await loadStore();
+  const identity = await getActiveIdentity();
   const projects = input.projectId
-    ? store.projects.filter((project) => project.id === input.projectId)
-    : store.projects;
+    ? store.projects.filter((project) => project.id === input.projectId && projectVisibleToIdentity(project, identity))
+    : store.projects.filter((project) => projectVisibleToIdentity(project, identity));
   const runIds: string[] = [];
   let proposalCount = 0;
 

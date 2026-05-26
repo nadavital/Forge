@@ -218,29 +218,47 @@ class SupabaseWriter:
             "representative_opportunity_id": result.cluster.representative_opportunity_id,
         }
 
-    def save(self, result: ManagedResearchResult) -> dict[str, Any]:
+    def save(self, result: ManagedResearchResult, project_id: str | None = None) -> dict[str, Any]:
+        run_row: dict[str, Any] = {
+            "run_type": "managed",
+            "status": "completed",
+            "trigger": "managed_agent",
+            "metadata": {
+                "agent": result.agent,
+                "signal_count": len(result.signals),
+                "opportunity_count": len(result.opportunities),
+            },
+        }
+        if project_id:
+            run_row["project_id"] = project_id
+            run_row["metadata"]["project_id"] = project_id
         run = self.insert(
             "pipeline_runs",
-            [
-                {
-                    "run_type": "managed",
-                    "status": "completed",
-                    "trigger": "managed_agent",
-                    "metadata": {
-                        "agent": result.agent,
-                        "signal_count": len(result.signals),
-                        "opportunity_count": len(result.opportunities),
-                    },
-                }
-            ],
+            [run_row],
         )[0]
         run_id = run["id"]
 
-        signal_rows = self.insert("signals", [signal.to_supabase_row() for signal in result.signals])
+        signal_rows = self.insert(
+            "signals",
+            [
+                {
+                    **signal.to_supabase_row(),
+                    "metadata": {
+                        **signal.metadata,
+                        **({"project_id": project_id} if project_id else {}),
+                    },
+                    **({"project_id": project_id} if project_id else {}),
+                }
+                for signal in result.signals
+            ],
+        )
         opportunity_rows = self.insert(
             "opportunities",
             [
-                opportunity.to_supabase_row(pipeline_run_id=run_id)
+                {
+                    **opportunity.to_supabase_row(pipeline_run_id=run_id),
+                    **({"project_id": project_id} if project_id else {}),
+                }
                 for opportunity in result.opportunities
             ],
         )
@@ -388,27 +406,29 @@ class SupabaseWriter:
             "evaluation_rows_saved": len(evaluation_rows),
         }
 
-    def save_seed_discovery(self, result: SeedDiscoveryResult) -> dict[str, Any]:
+    def save_seed_discovery(self, result: SeedDiscoveryResult, project_id: str | None = None) -> dict[str, Any]:
+        run_row: dict[str, Any] = {
+            "run_type": "managed",
+            "status": "completed",
+            "trigger": "managed_agent",
+            "metadata": {
+                "pipeline": "seed_topics",
+                "theme": result.theme,
+                "agent": result.agent,
+                "seed_topic_count": len(result.seed_topics),
+                "seed_topics": [
+                    topic.to_metadata()
+                    for topic in result.seed_topics
+                ],
+                "raw_output_chars": len(result.raw_text),
+            },
+        }
+        if project_id:
+            run_row["project_id"] = project_id
+            run_row["metadata"]["project_id"] = project_id
         run = self.insert(
             "pipeline_runs",
-            [
-                {
-                    "run_type": "managed",
-                    "status": "completed",
-                    "trigger": "managed_agent",
-                    "metadata": {
-                        "pipeline": "seed_topics",
-                        "theme": result.theme,
-                        "agent": result.agent,
-                        "seed_topic_count": len(result.seed_topics),
-                        "seed_topics": [
-                            topic.to_metadata()
-                            for topic in result.seed_topics
-                        ],
-                        "raw_output_chars": len(result.raw_text),
-                    },
-                }
-            ],
+            [run_row],
         )[0]
         return {
             "pipeline_run_id": run["id"],

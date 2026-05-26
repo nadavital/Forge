@@ -1,5 +1,8 @@
 import { createBuildBrief, type BuildBrief } from "@/lib/build/brief";
-import { canUseManagedGeminiBuilder, runManagedGeminiBuilder } from "@/lib/build/managed-gemini-builder";
+import { buildReadinessForOpportunity } from "@/lib/build/readiness";
+import { projectBuildReadiness } from "@/lib/build/project-readiness";
+import { runManagedGeminiBuilder } from "@/lib/build/managed-gemini-builder";
+import type { BuilderAdapter } from "@/lib/build/adapter";
 import {
   createMvpBuild,
   getProjectBundle,
@@ -10,7 +13,7 @@ import {
 import type { DbMvpBuild } from "@/lib/db/types";
 import { runSimulatedBuilder } from "@/lib/simulated-builder";
 
-export type BuilderAdapter = "managed" | "simulated";
+export type { BuilderAdapter };
 
 export async function queueOpportunityBuild(input: {
   projectId: string;
@@ -31,19 +34,45 @@ export async function queueOpportunityBuild(input: {
   const evidenceIds = new Set(
     bundle.links.filter((link) => link.opportunity_id === opportunity.id).map((link) => link.signal_id)
   );
-  const adapter = selectBuilderAdapter({
-    requested: input.adapter,
-    hasBuildTarget: true
+  const evidenceSignals = bundle.signals.filter((signal) => evidenceIds.has(signal.id));
+  const evaluations = bundle.evaluations.filter((evaluation) => evaluation.opportunity_id === opportunity.id);
+  const readiness = buildReadinessForOpportunity({
+    opportunity,
+    evaluations,
+    evidenceCount: evidenceIds.size,
+    evidence: evidenceSignals
   });
+  if (!readiness.canBuild) {
+    throw new Error(readiness.reason);
+  }
+  const buildPathReadiness = projectBuildReadiness({
+    project,
+    sources: bundle.sources,
+    githubConnections: bundle.githubConnections,
+    requestedAdapter: input.adapter
+  });
+  if (!buildPathReadiness.canBuild) {
+    throw new Error(buildPathReadiness.reason);
+  }
+  const adapter = buildPathReadiness.adapter;
+  const githubTarget = buildPathReadiness.githubTarget;
   const brief = createBuildBrief({
     adapter: adapter === "managed" ? "gemini_managed" : "simulated",
     opportunity,
     project,
-    evidence: bundle.signals.filter((signal) => evidenceIds.has(signal.id)),
-    evaluations: bundle.evaluations.filter((evaluation) => evaluation.opportunity_id === opportunity.id)
+    githubConnectionId: githubTarget.githubConnectionId,
+    githubConnectionAccountLogin: githubTarget.generatedRepoAccountLogin,
+    githubConnectionCanCreateRepos: githubTarget.generatedRepoCanCreate,
+    userPreferenceNotes: bundle.preferences?.notes,
+    evidence: evidenceSignals,
+    evaluations
   });
 
-  await updateOpportunityStatus(input.opportunityId, "building");
+  await updateOpportunityStatus({
+    projectId: input.projectId,
+    opportunityId: input.opportunityId,
+    status: "building"
+  });
 
   const build = await createMvpBuild({
     projectId: input.projectId,
@@ -68,7 +97,8 @@ export async function queueOpportunityBuild(input: {
       projectId: input.projectId,
       opportunityId: input.opportunityId,
       build,
-      brief
+      brief,
+      githubConnection: githubTarget.githubConnection
     });
     return { build, adapter };
   }
@@ -78,21 +108,18 @@ export async function queueOpportunityBuild(input: {
     opportunityId: input.opportunityId,
     build
   });
-  await insertBuildArtifacts(build.id, [
-    {
-      artifact_type: "build_brief",
-      content: JSON.stringify(redactBriefForArtifact(brief), null, 2)
-    }
-  ]);
+  await insertBuildArtifacts({
+    projectId: input.projectId,
+    buildId: build.id,
+    artifacts: [
+      {
+        artifact_type: "build_brief",
+        content: JSON.stringify(redactBriefForArtifact(brief), null, 2)
+      }
+    ]
+  });
 
   return { build, adapter };
-}
-
-function selectBuilderAdapter(input: { requested?: BuilderAdapter; hasBuildTarget: boolean }): BuilderAdapter {
-  if (input.requested) return input.requested;
-  if (process.env.FORGE_BUILDER_ADAPTER === "managed") return "managed";
-  if (process.env.FORGE_BUILDER_ADAPTER === "simulated") return "simulated";
-  return canUseManagedGeminiBuilder() && input.hasBuildTarget ? "managed" : "simulated";
 }
 
 function redactBriefForArtifact(brief: BuildBrief): BuildBrief {

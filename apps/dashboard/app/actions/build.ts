@@ -9,7 +9,16 @@ type StartBuildInput = {
 };
 
 export async function startAntigravityBuild({ projectId, opportunityId }: StartBuildInput) {
-  const { adapter } = await queueOpportunityBuild({ projectId, opportunityId });
+  let adapter: Awaited<ReturnType<typeof queueOpportunityBuild>>["adapter"];
+  try {
+    const result = await queueOpportunityBuild({ projectId, opportunityId });
+    adapter = result.adapter;
+  } catch (error) {
+    return {
+      ok: false as const,
+      message: error instanceof Error ? error.message : "Build could not start."
+    };
+  }
 
   revalidatePath(`/projects/${projectId}`);
   revalidatePath(`/projects/${projectId}/opportunities/${opportunityId}`);

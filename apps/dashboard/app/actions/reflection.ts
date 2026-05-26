@@ -11,7 +11,7 @@ type ResolveReflectionInput = {
 };
 
 export async function resolveReflection({ proposalId, projectId, decision }: ResolveReflectionInput) {
-  await resolveReflectionProposal(proposalId, decision);
+  await resolveReflectionProposal({ projectId, proposalId, decision });
 
   await recordPreferenceEvent({
     projectId,

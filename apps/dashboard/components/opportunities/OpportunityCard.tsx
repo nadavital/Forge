@@ -19,6 +19,7 @@ export function OpportunityCard({ opportunity, projectId }: OpportunityCardProps
       <div className="card-accent" aria-hidden="true" />
 
       <div className="card-body">
+        <span className={`evidence-badge ${opportunity.evidenceState}`}>{opportunity.evidenceLabel}</span>
         <h2 className="card-title">
           <Link href={href}>{opportunity.title}</Link>
         </h2>

@@ -7,8 +7,17 @@
     "start": "pnpm --filter @forge/dashboard start",
     "build": "pnpm --filter @forge/dashboard build",
     "lint": "pnpm --filter @forge/dashboard lint",
+    "smoke:managed-research": "pnpm --filter @forge/dashboard smoke:managed-research",
+    "smoke:runtime": "pnpm --filter @forge/dashboard smoke:runtime",
+    "smoke:worker-flow": "pnpm --filter @forge/dashboard smoke:worker-flow",
+    "worker:probe": "pnpm --filter @forge/dashboard worker:probe",
+    "supabase:migrate": "bash scripts/apply-supabase-migrations.sh",
+    "supabase:preflight": "bash scripts/preflight-supabase-runtime.sh",
+    "runtime:secrets": "bash scripts/ensure-local-runtime-secrets.sh",
     "test:contracts": "pnpm --filter @forge/dashboard test:contracts",
+    "test:managed-research": "cd services/managed_research && uv run python -m tests.run_stdlib_tests",
     "typecheck": "pnpm --filter @forge/dashboard typecheck",
+    "verify": "pnpm test:contracts && pnpm test:managed-research && pnpm typecheck && pnpm build && pnpm smoke:managed-research && pnpm smoke:worker-flow",
     "setup": "bash apps/dashboard/scripts/setup-local.sh"
   },
   "packageManager": "pnpm@9.15.4"

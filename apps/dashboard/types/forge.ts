@@ -28,14 +28,43 @@ export type ContractBuild = {
   artifacts?: ContractBuildArtifact[];
 };
 
+export type OpportunityEvidenceState =
+  | "brief_only"
+  | "source_collected"
+  | "repo_evidence"
+  | "manual_context"
+  | "unknown";
+
 export type ContractOpportunity = {
   id: string;
   title: string;
   score: number;
   status: string;
+  evidenceState: OpportunityEvidenceState;
+  evidenceLabel: string;
+  evidenceSummary: string;
+  buildReadiness: {
+    canBuild: boolean;
+    reason: string;
+  };
+  reviewContext?: {
+    sourcePlan: string[];
+    constraints: string[];
+    disqualifyingEvidence: string[];
+    mvpBoundaries: string[];
+    userTasteNotes: string[];
+    openQuestions: string[];
+  };
   problem: string;
   targetUser: string;
   mvpConcept: string;
+  synthesis?: {
+    productPitch?: string;
+    mvpScope: string[];
+    nonGoals: string[];
+    builderSystemPrompt?: string;
+    builderReadiness?: string;
+  };
   tasteCritique: string;
   decision: {
     recommendation: DecisionRecommendation;
@@ -82,10 +111,76 @@ export type MorningReviewProject = {
   id: string;
   name: string;
   mode: string;
+  modeKey: ProjectMode;
+  needsGitHubConnection: boolean;
   signalCount: number;
   runStatus: string;
   opportunities: ContractOpportunity[];
   digest?: MorningDigest;
+};
+
+export type AuthSessionView = {
+  mode: "hosted_session" | "env_override" | "local_default";
+  label: string;
+  detail: string;
+  signedIn: boolean;
+  signInConfigured: boolean;
+};
+
+export type ResearchBriefView = {
+  id: string;
+  status: "needs_context" | "ready_for_research" | "approved" | "running" | "completed";
+  hypothesis: string;
+  targetUsers: string[];
+  painArea: string;
+  constraints: string[];
+  sourcePlan: string[];
+  disqualifyingEvidence: string[];
+  mvpBoundaries: string[];
+  userTasteNotes: string[];
+  openQuestions: string[];
+  confidence?: number | null;
+};
+
+export type ResearchEvidenceSummaryView = {
+  opportunities: number;
+  buildReadyOpportunities: number;
+  needsMoreEvidenceOpportunities: number;
+  reasons: string[];
+  sourceAudit?: {
+    sources: Array<{ source: string; label: string; count: number }>;
+    enabledSources: string[];
+    targets: string[];
+  };
+  status: "ready" | "needs_more_evidence" | "unknown";
+  label: string;
+  detail: string;
+};
+
+export type IdeaConversationView = {
+  id: string;
+  title: string;
+  status: "active" | "brief_ready" | "researching" | "closed";
+  messages: Array<{
+    id: string;
+    role: "user" | "assistant" | "system";
+    content: string;
+  }>;
+  latestBrief?: ResearchBriefView;
+  latestResearchRun?: {
+    id: string;
+    status: string;
+    evidenceSummary?: ResearchEvidenceSummaryView;
+  };
+  agentTasks: Array<{
+    id: string;
+    pipelineRunId?: string | null;
+    role: string;
+    phase: string;
+    status: "queued" | "running" | "completed" | "failed";
+    detail?: string | null;
+    stateLabel?: string;
+  }>;
 };
 
 export type ReviewAction = "approve" | "watch" | "reject" | "research_more";
@@ -107,7 +202,46 @@ export type ProjectSettingsView = {
       complete: boolean;
     }>;
   };
-  sources: Array<{ id: string; name: string; type: string; status: string }>;
+  sources: Array<{
+    id: string;
+    name: string;
+    type: string;
+    displayType: string;
+    status: string;
+    requiresConnection: boolean;
+  }>;
+  githubConnections: Array<{
+    id: string;
+    accountLogin: string;
+    accountType?: "User" | "Organization" | null;
+    provider: string;
+    status: string;
+    installationId?: string | null;
+    scopes: string[];
+  }>;
+  githubInstallUrl?: string | null;
+  githubUserAuthUrl?: string | null;
+  githubAppConfigured: boolean;
+  githubOAuthConfigured: boolean;
+  githubDevFallbackEnabled: boolean;
+  runtimeReadiness: Array<{
+    id: string;
+    label: string;
+    status: "ready" | "partial" | "missing";
+    summary: string;
+    detail: string;
+    missing: string[];
+    setup: Array<{
+      label: string;
+      value: string;
+      proof?: {
+        kind: "runtime_health" | "callback_flow";
+        uncheckedLabel: string;
+        provedLabel: string;
+        notProvedLabel: string;
+      };
+    }>;
+  }>;
   triggers: Array<{
     id: string;
     name: string;

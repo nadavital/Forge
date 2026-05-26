@@ -1,7 +1,7 @@
 "use client";
 
 import { useTransition } from "react";
-import { Archive, GitBranch, Save } from "lucide-react";
+import { Archive, Save } from "lucide-react";
 import { archiveProject } from "@/app/actions/project";
 import { saveProjectSettings } from "@/app/actions/settings";
 import type { ProjectSettingsView } from "@/types/forge";
@@ -37,7 +37,6 @@ export function ProjectSettingsForm({ projectId, settings }: ProjectSettingsForm
 
       await saveProjectSettings({
         projectId,
-        repoUrl: String(formData.get("repoUrl") ?? settings.project.repoUrl),
         productUrl: String(formData.get("productUrl") ?? settings.project.productUrl),
         description: String(formData.get("description") ?? settings.project.description),
         riskTolerance: String(formData.get("riskTolerance") ?? settings.preferences.riskTolerance),
@@ -68,20 +67,6 @@ export function ProjectSettingsForm({ projectId, settings }: ProjectSettingsForm
             <h2>Project context</h2>
           </div>
           <div className="settings-fields">
-            <label className="field-label" htmlFor="repoUrl">
-              GitHub repository
-            </label>
-            <div className="field-with-icon settings-field-icon">
-              <GitBranch aria-hidden="true" />
-              <input
-                defaultValue={settings.project.repoUrl}
-                disabled={isPending}
-                id="repoUrl"
-                name="repoUrl"
-                placeholder="nadavital/forge or https://github.com/org/repo"
-              />
-            </div>
-
             <label className="field-label" htmlFor="productUrl">
               Product URL
             </label>
@@ -114,10 +99,15 @@ export function ProjectSettingsForm({ projectId, settings }: ProjectSettingsForm
                 <li key={source.id}>
                   <div>
                     <strong>{source.name}</strong>
-                    <span>{source.type.replace(/_/g, " ")}</span>
+                    <span>
+                      {source.displayType}
+                      {source.requiresConnection ? " - connect GitHub first" : ""}
+                    </span>
                   </div>
                   <select defaultValue={source.status} disabled={isPending} name={`source-${source.id}`}>
-                    <option value="active">active</option>
+                    <option disabled={source.requiresConnection} value="active">
+                      active
+                    </option>
                     <option value="paused">paused</option>
                     <option value="error">error</option>
                   </select>

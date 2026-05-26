@@ -2,14 +2,19 @@
   "name": "@forge/dashboard",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev --webpack",
     "dev:turbo": "next dev",
     "start": "next start",
     "build": "next build",
-    "lint": "next lint",
+    "lint": "pnpm typecheck",
+    "smoke:managed-research": "node scripts/smoke-managed-research-bridge.ts",
+    "smoke:runtime": "node scripts/smoke-runtime.ts",
+    "smoke:worker-flow": "node scripts/smoke-worker-flow.ts",
+    "worker:probe": "node scripts/smoke-worker.ts",
     "test:contracts": "node --test lib/*.test.ts",
-    "typecheck": "find .next -name '* 2.*' -delete 2>/dev/null; tsc --noEmit",
+    "typecheck": "find .next -name '* 2.*' -delete 2>/dev/null; next typegen; tsc --noEmit",
     "seed:reset": "rm -rf .forge-data"
   },
   "dependencies": {

@@ -1,7 +1,40 @@
 export type JsonObject = Record<string, unknown>;
 
+export type DbUser = {
+  id: string;
+  email?: string | null;
+  display_name?: string | null;
+  created_at?: string;
+};
+
+export type DbWorkspace = {
+  id: string;
+  name: string;
+  owner_user_id: string;
+  created_at?: string;
+};
+
+export type DbWorkspaceMember = {
+  workspace_id: string;
+  user_id: string;
+  role: "owner" | "member";
+  created_at?: string;
+};
+
+export type DbUserAuthIdentity = {
+  id: string;
+  user_id: string;
+  provider: string;
+  subject: string;
+  email?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
 export type DbProject = {
   id: string;
+  owner_user_id?: string | null;
+  workspace_id?: string | null;
   name: string;
   mode: string;
   stage?: string | null;
@@ -13,9 +46,38 @@ export type DbProject = {
   updated_at?: string;
 };
 
+export type DbGitHubConnection = {
+  id: string;
+  owner_user_id: string;
+  workspace_id?: string | null;
+  provider: "github_app" | "github_oauth";
+  account_login: string;
+  account_type?: "User" | "Organization" | null;
+  installation_id?: string | null;
+  scopes?: string[];
+  status: "active" | "revoked" | "needs_reauth";
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type DbGitHubUserToken = {
+  id: string;
+  connection_id: string;
+  owner_user_id: string;
+  access_token: string;
+  token_type?: string | null;
+  expires_at?: string | null;
+  refresh_token?: string | null;
+  refresh_token_expires_at?: string | null;
+  scopes?: string[];
+  created_at?: string;
+  updated_at?: string;
+};
+
 export type DbSourceConfig = {
   id: string;
   project_id: string;
+  connection_id?: string | null;
   source_type: string;
   name: string;
   status: string;
@@ -55,12 +117,67 @@ export type DbPreferenceEvent = {
 export type DbPipelineRun = {
   id: string;
   project_id?: string | null;
+  research_brief_id?: string | null;
   run_type: string;
   status: string;
   trigger?: string | null;
   started_at?: string | null;
   completed_at?: string | null;
   metadata?: JsonObject | null;
+};
+
+export type ResearchBriefReadiness = "needs_context" | "ready_for_research" | "approved" | "running" | "completed";
+
+export type DbIdeaConversation = {
+  id: string;
+  project_id: string;
+  user_id?: string | null;
+  title: string;
+  status: "active" | "brief_ready" | "researching" | "closed";
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type DbIdeaMessage = {
+  id: string;
+  conversation_id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  metadata?: JsonObject | null;
+  created_at?: string;
+};
+
+export type DbResearchBrief = {
+  id: string;
+  project_id: string;
+  conversation_id?: string | null;
+  status: ResearchBriefReadiness;
+  hypothesis: string;
+  target_users: string[];
+  pain_area: string;
+  constraints: string[];
+  source_plan: string[];
+  disqualifying_evidence: string[];
+  mvp_boundaries: string[];
+  user_taste_notes: string[];
+  open_questions: string[];
+  confidence?: number | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type DbAgentTask = {
+  id: string;
+  project_id: string;
+  pipeline_run_id?: string | null;
+  research_brief_id?: string | null;
+  agent_role: string;
+  status: "queued" | "running" | "completed" | "failed";
+  prompt?: string | null;
+  result?: JsonObject | null;
+  error?: string | null;
+  created_at?: string;
+  updated_at?: string;
 };
 
 export type DbSignal = {
@@ -159,12 +276,22 @@ export type DbReflectionProposal = {
 };
 
 export type ForgeStore = {
+  users: DbUser[];
+  workspaces: DbWorkspace[];
+  workspace_members: DbWorkspaceMember[];
+  user_auth_identities: DbUserAuthIdentity[];
   projects: DbProject[];
+  github_connections: DbGitHubConnection[];
+  github_user_tokens: DbGitHubUserToken[];
   source_configs: DbSourceConfig[];
   triggers: DbTrigger[];
   user_preferences: DbUserPreference[];
   preference_events: DbPreferenceEvent[];
   pipeline_runs: DbPipelineRun[];
+  idea_conversations: DbIdeaConversation[];
+  idea_messages: DbIdeaMessage[];
+  research_briefs: DbResearchBrief[];
+  agent_tasks: DbAgentTask[];
   signals: DbSignal[];
   opportunities: DbOpportunity[];
   opportunity_signals: DbOpportunitySignal[];

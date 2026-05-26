@@ -8,8 +8,12 @@ type SupabaseClient = {
 };
 
 export function createSupabaseClient(): SupabaseClient | null {
+  if (forcedLocalStorage()) {
+    return null;
+  }
+
   const url = process.env.SUPABASE_URL?.replace(/\/$/, "");
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!url || !key) {
     return null;
@@ -105,5 +109,12 @@ export function createSupabaseClient(): SupabaseClient | null {
 }
 
 export function isSupabaseConfigured(): boolean {
-  return Boolean(process.env.SUPABASE_URL && (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY));
+  if (forcedLocalStorage()) {
+    return false;
+  }
+  return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+}
+
+function forcedLocalStorage(): boolean {
+  return process.env.FORGE_STORAGE_BACKEND?.trim().toLowerCase() === "local";
 }

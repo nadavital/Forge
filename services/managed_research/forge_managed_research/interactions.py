@@ -547,6 +547,7 @@ def _cluster_packet(cluster: OpportunityCluster) -> dict[str, Any]:
         "score": cluster.score,
         "variants": cluster.variants,
         "why_clustered": cluster.why_clustered,
+        "context": cluster.context,
         "evidence": [
             {
                 "source": signal.source,

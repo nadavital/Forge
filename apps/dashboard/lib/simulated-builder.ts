@@ -15,28 +15,40 @@ export async function runSimulatedBuilder(input: {
   opportunityId: string;
   build: DbMvpBuild;
 }): Promise<void> {
-  const opportunity = await getOpportunityRecord(input.opportunityId);
+  const opportunity = await getOpportunityRecord(input.projectId, input.opportunityId);
   const title = opportunity?.title ?? "Untitled opportunity";
   const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
   const target = targetFromBrief(input.build.build_brief);
   const targetRepo = target.repoUrl || `${SIMULATED_REPO}-${slug}`;
   const branch = target.branch || `forge/${slug}`;
 
-  await updateMvpBuild(input.build.id, { status: "building" });
-  await updateMvpBuild(input.build.id, {
-    status: "reviewing",
-    generated_repo_url: targetRepo,
-    branch,
-    logs:
-      target.kind === "generated_repo_with_pr"
-        ? "Simulated Antigravity builder: scaffolded a generated repo, opened an MVP PR, and ran smoke checks."
-        : "Simulated Antigravity builder: created a feature branch in the connected repo, opened a PR, and ran smoke checks."
+  await updateMvpBuild({
+    projectId: input.projectId,
+    buildId: input.build.id,
+    patch: { status: "building" }
+  });
+  await updateMvpBuild({
+    projectId: input.projectId,
+    buildId: input.build.id,
+    patch: {
+      status: "reviewing",
+      generated_repo_url: targetRepo,
+      branch,
+      logs:
+        target.kind === "generated_repo_with_pr"
+          ? "Simulated Antigravity builder: scaffolded a generated repo, opened an MVP PR, and ran smoke checks."
+          : "Simulated Antigravity builder: created a feature branch in the connected repo, opened a PR, and ran smoke checks."
+    }
   });
 
-  await updateMvpBuild(input.build.id, {
-    status: "completed",
-    pr_url: `${targetRepo.replace(/\/$/, "")}/pull/1`,
-    logs: "Simulated builder completed. BuildReviewer passed README, run instructions, and smoke checks."
+  await updateMvpBuild({
+    projectId: input.projectId,
+    buildId: input.build.id,
+    patch: {
+      status: "completed",
+      pr_url: `${targetRepo.replace(/\/$/, "")}/pull/1`,
+      logs: "Simulated builder completed. BuildReviewer passed README, run instructions, and smoke checks."
+    }
   });
 
   const artifacts = [
@@ -59,16 +71,24 @@ export async function runSimulatedBuilder(input: {
   ];
   const review = reviewBuildArtifacts(artifacts);
 
-  await insertBuildArtifacts(input.build.id, [
-    ...artifacts,
-    {
-      artifact_type: "build_review",
-      content: review.summary,
-      metadata: { missing: review.missing }
-    }
-  ]);
+  await insertBuildArtifacts({
+    projectId: input.projectId,
+    buildId: input.build.id,
+    artifacts: [
+      ...artifacts,
+      {
+        artifact_type: "build_review",
+        content: review.summary,
+        metadata: { missing: review.missing }
+      }
+    ]
+  });
 
-  await updateOpportunityStatus(input.opportunityId, "built");
+  await updateOpportunityStatus({
+    projectId: input.projectId,
+    opportunityId: input.opportunityId,
+    status: "built"
+  });
 }
 
 function targetFromBrief(brief: unknown): { kind: string; repoUrl: string; branch: string } {
@@ -100,7 +120,11 @@ export async function queueSimulatedBuild(input: {
 }): Promise<DbMvpBuild> {
   const { createMvpBuild } = await import("@/lib/db/repository");
 
-  await updateOpportunityStatus(input.opportunityId, "building");
+  await updateOpportunityStatus({
+    projectId: input.projectId,
+    opportunityId: input.opportunityId,
+    status: "building"
+  });
 
   const build = await createMvpBuild({
     projectId: input.projectId,

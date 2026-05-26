@@ -34,7 +34,7 @@ export function OpportunityDetail({ opportunity, projectId, projectName }: Oppor
 
   const building = opportunity.build && !["completed", "failed"].includes(opportunity.build.status);
   const built = opportunity.build?.status === "completed";
-  const canBuild = !building && !built;
+  const canBuild = opportunity.buildReadiness.canBuild && !building && !built;
 
   useEffect(() => {
     if (!building) return;
@@ -54,7 +54,9 @@ export function OpportunityDetail({ opportunity, projectId, projectName }: Oppor
     startTransition(async () => {
       const result = await startAntigravityBuild({ projectId, opportunityId: opportunity.id });
       setStatus(result.message);
-      router.refresh();
+      if (result.ok) {
+        router.refresh();
+      }
     });
   }
 
@@ -98,6 +100,11 @@ export function OpportunityDetail({ opportunity, projectId, projectName }: Oppor
           <div aria-hidden="true" className="neural-response-glow" />
           <div className="neural-response-inner">
             <div className="response-mvp">
+              <span className={`evidence-badge ${opportunity.evidenceState}`}>{opportunity.evidenceLabel}</span>
+              <p>{opportunity.evidenceSummary}</p>
+            </div>
+
+            <div className="response-mvp">
               <span className="response-label">Why this exists</span>
               <p>{opportunity.problem || opportunity.decision.summary}</p>
             </div>
@@ -107,10 +114,40 @@ export function OpportunityDetail({ opportunity, projectId, projectName }: Oppor
               <p>{narrative.mvp}</p>
             </div>
 
+            {opportunity.synthesis ? (
+              <div className="response-mvp">
+                <span className="response-label">Build direction</span>
+                {opportunity.synthesis.mvpScope.length > 0 ? (
+                  <p>{opportunity.synthesis.mvpScope.join(" ")}</p>
+                ) : opportunity.synthesis.builderSystemPrompt ? (
+                  <p>{opportunity.synthesis.builderSystemPrompt}</p>
+                ) : (
+                  <p>{opportunity.synthesis.productPitch}</p>
+                )}
+                {opportunity.synthesis.nonGoals.length > 0 ? (
+                  <p className="response-subtle">Not in scope: {opportunity.synthesis.nonGoals.join("; ")}.</p>
+                ) : null}
+              </div>
+            ) : null}
+
             <div className="response-mvp">
               <span className="response-label">Decision</span>
               <p>{opportunity.decision.summary}</p>
             </div>
+
+            {opportunity.reviewContext ? (
+              <div className="response-mvp">
+                <span className="response-label">Research guardrails</span>
+                <div className="review-context-grid">
+                  <ContextList label="Sources to inspect" items={opportunity.reviewContext.sourcePlan} />
+                  <ContextList label="Constraints" items={opportunity.reviewContext.constraints} />
+                  <ContextList label="Stop if" items={opportunity.reviewContext.disqualifyingEvidence} />
+                  <ContextList label="MVP boundary" items={opportunity.reviewContext.mvpBoundaries} />
+                  <ContextList label="Taste notes" items={opportunity.reviewContext.userTasteNotes} />
+                  <ContextList label="Open questions" items={opportunity.reviewContext.openQuestions} />
+                </div>
+              </div>
+            ) : null}
 
             {narrative.signalCount > 0 ? (
               <div className="response-signals">
@@ -234,7 +271,9 @@ export function OpportunityDetail({ opportunity, projectId, projectName }: Oppor
                   </span>
                 ) : built ? (
                   <span className="build-state complete">Complete</span>
-                ) : null}
+                ) : (
+                  <span className="build-state blocked">{opportunity.buildReadiness.reason}</span>
+                )}
 
                 <button
                   aria-label="Send refinement"
@@ -249,6 +288,20 @@ export function OpportunityDetail({ opportunity, projectId, projectName }: Oppor
           </div>
         </form>
       </footer>
+    </div>
+  );
+}
+
+function ContextList({ label, items }: { label: string; items: string[] }) {
+  if (!items.length) return null;
+  return (
+    <div className="review-context-list">
+      <span>{label}</span>
+      <ul>
+        {items.slice(0, 4).map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
     </div>
   );
 }

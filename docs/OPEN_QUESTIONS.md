@@ -6,6 +6,9 @@ Answer these before expanding scope. Do not block the first fixture-based vertic
 
 - Minimum useful connected-product setup: a project with a GitHub repo URL, preference notes, manual/GitHub source configs, and a manual trigger. This path can run repo discovery and semantic repo analysis.
 - Minimum useful new-product setup: project context and preference notes only. It is not useful enough yet because it does not produce agent-backed recommendations.
+- New-product intake direction: use an AI-led conversation that compiles a `research_brief`; avoid hardcoded questionnaire flows.
+- First ownership direction: add user/workspace-scoped records now, then map real auth/OAuth subjects into those records.
+- First GitHub connection direction: model GitHub App/OAuth connection metadata separately from repo source configs; do not treat pasted tokens as the product contract.
 - First dashboard priority: product review and approval, not raw source browsing.
 - First build approval rule: human approves the opportunity/direction only; Forge owns implementation details inside the v1 build contract.
 - First reflection boundary: reflection may store proposals, but it must not silently change high-risk prompts, skills, credentials, destructive permissions, or build policies.
@@ -20,6 +23,7 @@ Answer these before expanding scope. Do not block the first fixture-based vertic
 - Which source configs should v1 support: manual feedback, GitHub, HN, web search, social search, competitor URLs?
 - Which trigger types should v1 support: manual, daily schedule, source-volume spike, sentiment shift, competitor change, release follow-up?
 - Should manual ideas be entered before public source ingestion exists?
+- How should the AI intake decide it has enough context to mark a brief `ready_for_research`?
 - What makes an opportunity good enough to show for approval?
 - How should Forge display why a recommendation matches the user's taste?
 - What does a morning/product review need to contain for a user to make a real decision?
@@ -48,8 +52,9 @@ Answer these before expanding scope. Do not block the first fixture-based vertic
 
 - What template repo should generated MVPs start from?
 - How are generated repos named?
-- Who owns generated repos: the Forge org, the user, or a generated-project org?
+- Should generated repos default to an organization GitHub App install with Administration write permission, or should Forge support both org installs and user OAuth as equally first-class setup paths?
 - What exact Antigravity API or workflow starts a sandbox build?
+- What user-facing OAuth setup copy and token rotation policy should complement the GitHub App install/callback and installation-token exchange?
 - What logs and artifacts can Antigravity return?
 - Which prototype types should exist before full generated repo builds: generated UI, static mock, clickable demo, branch, generated repo?
 - Should auto-prototype be disabled, light UI only, code branch, or aggressive?

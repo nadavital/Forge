@@ -9,8 +9,12 @@ alter table public.opportunities
     'proposed',
     'recommended',
     'watched',
+    'watching',
+    'researching',
     'rejected',
     'approved',
+    'prototyping',
     'building',
-    'built'
+    'built',
+    'archived'
   ));

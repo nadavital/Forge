@@ -3,14 +3,16 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTransition } from "react";
-import { Settings2, Sparkles } from "lucide-react";
+import { GitBranch, Settings2, Sparkles } from "lucide-react";
 import { runProjectPipeline } from "@/app/actions/pipeline";
+import type { ProjectPrimaryAction } from "@/lib/project-primary-action";
 
 type ProjectHeaderProps = {
   projectId: string;
   projectName: string;
   mode: string;
   runStatus: string;
+  primaryAction?: ProjectPrimaryAction;
   signalCount?: number;
   opportunityCount?: number;
 };
@@ -20,6 +22,7 @@ export function ProjectHeader({
   projectName,
   mode,
   runStatus,
+  primaryAction = defaultRunAction,
   signalCount = 0,
   opportunityCount = 0
 }: ProjectHeaderProps) {
@@ -45,15 +48,33 @@ export function ProjectHeader({
             {mode} · {countLabel(signalCount, "signal")} · {countLabel(opportunityCount, "suggestion")}
           </p>
           <span className={isPending ? "dream-status active" : "dream-status"}>
-            {isPending ? "Starting staged run: collect → research → Bull/Bear → synthesize" : runStatus}
+            {isPending
+              ? primaryAction.kind === "run"
+                ? primaryAction.pendingStatus
+                : primaryAction.status
+              : primaryAction.kind === "conversation" || primaryAction.kind === "setup"
+                ? primaryAction.status
+                : runStatus}
           </span>
         </div>
 
-        {onReview ? (
+        {onReview && primaryAction.kind === "run" ? (
           <button className="btn btn-secondary" disabled={isPending} onClick={runAgain} type="button">
             <Sparkles aria-hidden="true" />
-            {isPending ? "Dreaming…" : "Dream now"}
+            {isPending ? primaryAction.pendingLabel : primaryAction.label}
           </button>
+        ) : null}
+        {onReview && primaryAction.kind === "conversation" ? (
+          <Link className="btn btn-secondary" href={primaryAction.href}>
+            <Sparkles aria-hidden="true" />
+            {primaryAction.label}
+          </Link>
+        ) : null}
+        {onReview && primaryAction.kind === "setup" ? (
+          <Link className="btn btn-secondary" href={primaryAction.href}>
+            <GitBranch aria-hidden="true" />
+            {primaryAction.label}
+          </Link>
         ) : null}
       </div>
 
@@ -77,3 +98,10 @@ export function ProjectHeader({
 function countLabel(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
+
+const defaultRunAction: ProjectPrimaryAction = {
+  kind: "run",
+  label: "Dream now",
+  pendingLabel: "Dreaming...",
+  pendingStatus: "Starting staged run: collect -> research -> Bull/Bear -> synthesize"
+};

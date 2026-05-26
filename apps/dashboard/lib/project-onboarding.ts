@@ -19,6 +19,7 @@ export type ProjectDefaultsInput = {
   mode: ProjectMode;
   name: string;
   repoUrl?: string | null;
+  githubConnectionRequired?: boolean;
   productUrl?: string | null;
   description?: string | null;
   markets?: string[];
@@ -88,6 +89,7 @@ export function githubSourcePatch(repoUrl?: string | null): Pick<DbSourceConfig,
 export function buildProjectDefaults(input: ProjectDefaultsInput): ProjectDefaults {
   const now = input.now ?? new Date().toISOString();
   const github = normalizeGithubRepository(input.repoUrl);
+  const githubStatus = github && !input.githubConnectionRequired ? "active" : "paused";
   const description = clean(input.description);
   const productUrl = clean(input.productUrl);
   const schedule = scheduleDefaults(input.scheduleCadence);
@@ -118,13 +120,14 @@ export function buildProjectDefaults(input: ProjectDefaultsInput): ProjectDefaul
       project_id: input.projectId,
       source_type: "github",
       name: github ? `${github.owner}/${github.repo}` : "GitHub repository",
-      status: github ? "active" : "paused",
+      status: githubStatus,
       config: github
         ? {
             repo_url: github.repoUrl,
             owner: github.owner,
             repo: github.repo,
-            ingest: ["issues", "pull_requests"]
+            ingest: ["issues", "pull_requests"],
+            ...(input.githubConnectionRequired ? { needs_connection: true } : {})
           }
         : { needs_connection: true }
     }
@@ -186,6 +189,7 @@ export function buildOnboardingChecklist(input: {
 }): ProjectOnboardingChecklistItem[] {
   const githubSource = input.sources.find((source) => source.source_type === "github");
   const manualSource = input.sources.find((source) => source.source_type === "manual");
+  const isNewProduct = input.project.mode === "new_product";
 
   return [
     {
@@ -196,9 +200,16 @@ export function buildOnboardingChecklist(input: {
     },
     {
       id: "github",
-      label: "GitHub repository",
-      description: "Connect issues and pull requests as project evidence.",
-      complete: Boolean(normalizeGithubRepository(input.project.repo_url) || githubSource?.config?.repo_url)
+      label: isNewProduct ? "Build repository" : "GitHub repository",
+      description: isNewProduct
+        ? "A generated repo is only needed after an approved build direction."
+        : "Link a GitHub App installation before treating the repo as fully connected.",
+      complete:
+        isNewProduct ||
+        Boolean(
+          githubSource?.connection_id &&
+            normalizeGithubRepository(input.project.repo_url || stringConfig(githubSource.config, "repo_url"))
+        )
     },
     {
       id: "manual",
@@ -223,6 +234,21 @@ export function buildOnboardingChecklist(input: {
 
 export function onboardingStatus(items: ProjectOnboardingChecklistItem[]): "complete" | "needs_setup" {
   return items.every((item) => item.complete) ? "complete" : "needs_setup";
+}
+
+export function sourceStatusForSettings(
+  source: Pick<DbSourceConfig, "source_type" | "connection_id" | "config">,
+  requestedStatus: string
+): string {
+  if (
+    requestedStatus === "active" &&
+    source.source_type === "github" &&
+    !source.connection_id &&
+    source.config?.needs_connection === true
+  ) {
+    return "paused";
+  }
+  return requestedStatus;
 }
 
 function githubRepository(owner: string, repo: string): GithubRepository | null {
@@ -265,4 +291,9 @@ function scheduleDefaults(value?: string | null): { status: string; cadence: str
 
 function clean(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function stringConfig(config: JsonObject | undefined, key: string): string {
+  const value = config?.[key];
+  return typeof value === "string" ? value : "";
 }
