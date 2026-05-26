@@ -127,6 +127,32 @@ export type AuthSessionView = {
   signInConfigured: boolean;
 };
 
+export type AccountSettingsView = {
+  authSession: AuthSessionView;
+  identity: {
+    userId: string;
+    workspaceId: string;
+    authProvider: "local" | "supabase";
+    authSubject: string;
+    email?: string | null;
+  };
+  emailAllowlistEnabled: boolean;
+  projectLinks: Array<{
+    id: string;
+    name: string;
+    mode: string;
+  }>;
+  githubConnections: Array<{
+    id: string;
+    accountLogin: string;
+    accountType?: "User" | "Organization" | null;
+    provider: string;
+    status: string;
+    installationId?: string | null;
+    scopes: string[];
+  }>;
+};
+
 export type ResearchBriefView = {
   id: string;
   status: "needs_context" | "ready_for_research" | "approved" | "running" | "completed";

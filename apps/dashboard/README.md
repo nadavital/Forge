@@ -21,7 +21,8 @@ Open **http://localhost:3000**. The local dashboard starts empty unless you have
 2. **+** in sidebar — add an existing GitHub repo or start a new product idea
 3. **Project → Review** — opportunity cards after a real project run has produced records
 4. **Project → Review → Explore idea** — talk through a new-product direction and approve a research brief
-5. **Project → Settings** — edit sources, link repos through GitHub connections, schedule triggers, taste, and reflection proposals
+5. **Account** — confirm the Forge email account and see GitHub connectors as repo access, not login
+6. **Project → Settings** — edit sources, link repos through GitHub connections, schedule triggers, taste, and reflection proposals
 
 ### Reset local data
 

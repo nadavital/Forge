@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LogIn, LogOut, Plus } from "lucide-react";
+import { LogIn, LogOut, Plus, UserRound } from "lucide-react";
 import { signOutAction } from "@/app/actions/auth";
 import { plural } from "@/lib/decision";
 import { useProjects } from "@/lib/projects-context";
@@ -61,12 +61,18 @@ export function AppSidebar({ authSession }: { authSession: AuthSessionView }) {
           <small>{authSession.detail}</small>
         </div>
         {authSession.signedIn ? (
-          <form action={signOutAction}>
-            <button className="footer-link footer-button" type="submit">
-              <LogOut aria-hidden="true" />
-              Sign out
-            </button>
-          </form>
+          <>
+            <Link className="footer-link" href="/account">
+              <UserRound aria-hidden="true" />
+              Account
+            </Link>
+            <form action={signOutAction}>
+              <button className="footer-link footer-button" type="submit">
+                <LogOut aria-hidden="true" />
+                Sign out
+              </button>
+            </form>
+          </>
         ) : authSession.signInConfigured ? (
           <Link className="footer-link" href="/login">
             <LogIn aria-hidden="true" />

@@ -4,6 +4,7 @@ import { getRequestAuthContext } from "@/lib/auth/request-session";
 import { isHostedAuthRequired, isSupabaseAuthConfigured } from "@/lib/auth/supabase-auth";
 import { GENERATED_REPO_TARGET_SOURCE_TYPE } from "@/lib/build/github-target";
 import { projectVisibleToIdentity } from "@/lib/db/identity-scope";
+import { emailAllowlistConfigured } from "@/lib/auth/email-allowlist";
 import {
   githubAppInstallUrl,
   githubUserAuthorizationUrl,
@@ -17,6 +18,7 @@ import { isDueProjectTrigger } from "@/lib/scheduler/demo-scheduler";
 import type { DbPipelineRun, JsonObject } from "@/lib/db/types";
 import type {
   AuthSessionView,
+  AccountSettingsView,
   IdeaConversationView,
   MorningReviewProject,
   ResearchEvidenceSummaryView,
@@ -58,6 +60,53 @@ export async function loadAuthSessionView(): Promise<AuthSessionView> {
       : "Using local development identity",
     signedIn: false,
     signInConfigured: isSupabaseAuthConfigured()
+  };
+}
+
+export async function loadAccountSettingsView(): Promise<AccountSettingsView> {
+  const [authSession, identity, store] = await Promise.all([
+    loadAuthSessionView(),
+    getActiveIdentity(),
+    loadStore()
+  ]);
+  const visibleProjects = store.projects.filter((project) => projectVisibleToIdentity(project, identity));
+  const visibleProjectIds = new Set(visibleProjects.map((project) => project.id));
+  const sourceConnectionIds = new Set(
+    store.source_configs
+      .filter((source) => visibleProjectIds.has(source.project_id))
+      .map((source) => source.connection_id)
+      .filter((value): value is string => Boolean(value))
+  );
+  const githubConnections = store.github_connections.filter((connection) => {
+    if (connection.owner_user_id === identity.userId) return true;
+    if (connection.workspace_id === identity.workspaceId) return true;
+    return sourceConnectionIds.has(connection.id);
+  });
+
+  return {
+    authSession,
+    identity: {
+      userId: identity.userId,
+      workspaceId: identity.workspaceId,
+      authProvider: identity.authProvider ?? "local",
+      authSubject: identity.authSubject ?? identity.userId,
+      email: identity.email ?? null
+    },
+    emailAllowlistEnabled: emailAllowlistConfigured(),
+    projectLinks: visibleProjects.map((project) => ({
+      id: project.id,
+      name: project.name,
+      mode: project.mode
+    })),
+    githubConnections: githubConnections.map((connection) => ({
+      id: connection.id,
+      accountLogin: connection.account_login,
+      accountType: connection.account_type,
+      provider: connection.provider,
+      status: connection.status,
+      installationId: connection.installation_id,
+      scopes: connection.scopes ?? []
+    }))
   };
 }
 
