@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowUp, CheckCircle2, LoaderCircle, PlayCircle, SearchCheck } from "lucide-react";
 import { approveResearchBrief, runQueuedResearch, sendIdeaMessage } from "@/app/actions/idea";
 import { ideaConversationCanContinue } from "@/lib/ideas/conversation-state";
-import type { IdeaConversationView, ResearchEvidenceSummaryView } from "@/types/forge";
+import type { IdeaConversationView, ResearchBriefView, ResearchEvidenceSummaryView } from "@/types/forge";
 
 type AgentTaskView = IdeaConversationView["agentTasks"][number];
 
@@ -90,10 +90,11 @@ export function IdeaIntakePanel({ projectId, conversation }: IdeaIntakePanelProp
       {brief ? (
         <article className="brief-card">
           <div>
-            <span className="response-label">Research brief</span>
+            <span className="response-label">{brief.status === "needs_context" ? "Draft brief" : "Research brief"}</span>
             <h3>{brief.hypothesis}</h3>
             {brief.painArea ? <p>{brief.painArea}</p> : null}
           </div>
+          <BriefReadinessSummary brief={brief} />
           <div className="brief-grid">
             <BriefList label="Users" items={brief.targetUsers} />
             <BriefList label="Sources" items={brief.sourcePlan} />
@@ -145,6 +146,52 @@ export function IdeaIntakePanel({ projectId, conversation }: IdeaIntakePanelProp
       ) : null}
     </section>
   );
+}
+
+function BriefReadinessSummary({ brief }: { brief: ResearchBriefView }) {
+  const missing = missingBriefSections(brief);
+  const confidence = confidenceLabel(brief.confidence);
+  const ready = brief.status !== "needs_context" && missing.length === 0;
+
+  return (
+    <div aria-label="Brief readiness" className={`brief-readiness ${ready ? "ready" : "needs_context"}`}>
+      <div>
+        <strong>{ready ? "Ready for source-backed research" : "Needs more product context"}</strong>
+        <span>{briefReadinessDetail(brief.status, missing.length)}</span>
+      </div>
+      <ul>
+        {confidence ? <li>{confidence}</li> : null}
+        {missing.length ? (
+          missing.slice(0, 3).map((section) => <li key={section}>Missing {section}</li>)
+        ) : (
+          <li>Core brief fields present</li>
+        )}
+      </ul>
+    </div>
+  );
+}
+
+function missingBriefSections(brief: ResearchBriefView): string[] {
+  const sections: string[] = [];
+  if (!brief.hypothesis.trim()) sections.push("hypothesis");
+  if (!brief.targetUsers.length) sections.push("target users");
+  if (!brief.painArea.trim()) sections.push("pain area");
+  if (!brief.sourcePlan.length) sections.push("source plan");
+  if (!brief.mvpBoundaries.length) sections.push("MVP boundary");
+  return sections;
+}
+
+function confidenceLabel(confidence: number | null | undefined): string | null {
+  if (typeof confidence !== "number" || !Number.isFinite(confidence)) return null;
+  return `AI confidence ${Math.round(Math.max(0, Math.min(confidence, 1)) * 100)}%`;
+}
+
+function briefReadinessDetail(status: string, missingCount: number): string {
+  if (status === "approved") return "Approved and waiting for research agents.";
+  if (status === "running") return "Research agents are working from this brief.";
+  if (status === "completed") return "Research completed from this brief.";
+  if (missingCount > 0) return "Answer the next prompt before approving research.";
+  return "The brief has enough structure for sourced research.";
 }
 
 function ResearchAgentProgress({

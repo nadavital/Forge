@@ -13,7 +13,7 @@ The strongest working loop is:
 1. The user creates a project and optionally connects a GitHub repo or seeds a new product with one freeform idea message.
 2. Forge stores project context, GitHub source config, manual source config, trigger config, and preference notes.
 3. For a new product, Forge starts from that freeform message or lets the user talk through a direction with an AI-led intake surface.
-4. The intake agent compiles the conversation into a structured research brief when enough context exists, or returns model-generated open questions that drive the next user turn. If the compiler is unavailable, Forge still stores a non-approvable draft with product follow-up questions derived from the user's conversation instead of shifting the conversation into setup troubleshooting.
+4. The intake agent compiles the conversation into a structured research brief when enough context exists, or returns model-generated open questions that drive the next user turn. The brief review surface shows whether the draft is ready for source-backed research, what product context is missing, and the compiler confidence. If the compiler is unavailable, Forge still stores a non-approvable draft with product follow-up questions derived from the user's conversation instead of shifting the conversation into setup troubleshooting.
 5. The project header routes new-product work back into the conversation, follow-up, brief review, or research state instead of offering a generic Dream run.
 6. The user approves the brief to queue research-agent tasks.
 7. The user runs Dream for connected-product review.

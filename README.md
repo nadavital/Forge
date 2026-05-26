@@ -32,6 +32,7 @@ Forge currently behaves like a product review and build-orchestration workbench:
 - User/workspace ownership records for projects and related runtime records.
 - GitHub App/OAuth connection records, install callback, server-side repo listing, project repo linking, and generated-repo target selection for new-product projects.
 - AI-led idea conversations that compile structured research briefs when `GEMINI_API_KEY` is configured.
+- The idea surface labels draft versus research-ready briefs, shows missing product context, and exposes compiler confidence before the user approves source-backed research.
 - New-product project headers route into the conversation and brief approval state instead of offering a generic Dream run before the AI/user interaction has produced an approved brief.
 - Once a research conversation is complete, the next idea message starts a fresh AI/user direction instead of mutating the closed brief.
 - Scheduled new-product runs wait for an approved AI brief instead of creating repeated waiting-for-brief runs.

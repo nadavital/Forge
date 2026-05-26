@@ -15,6 +15,21 @@ test("idea intake panel surfaces model-generated open questions instead of fixed
   assert.doesNotMatch(source, /prebuilt|fixed questionnaire/i);
 });
 
+test("idea intake panel shows brief readiness without fixed questions", () => {
+  const source = readFileSync(
+    new URL("../components/ideas/IdeaIntakePanel.tsx", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(source, /BriefReadinessSummary/);
+  assert.match(source, /Brief readiness/);
+  assert.match(source, /missingBriefSections/);
+  assert.match(source, /Ready for source-backed research/);
+  assert.match(source, /Needs more product context/);
+  assert.match(source, /AI confidence/);
+  assert.doesNotMatch(source, /questionnaire/i);
+});
+
 test("idea intake panel surfaces research evidence sufficiency from the latest run", () => {
   const source = readFileSync(
     new URL("../components/ideas/IdeaIntakePanel.tsx", import.meta.url),
