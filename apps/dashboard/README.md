@@ -129,7 +129,9 @@ asks the server action to validate it with Supabase, then writes Forge's httpOnl
 bridge can use the refresh cookie to obtain a fresh access token for that request. Set `FORGE_PUBLIC_APP_URL` to the deployed app origin so generated email
 redirects, Supabase callback setup, GitHub callback setup, webhook proof, and worker proof all use the same public host. Set `FORGE_REQUIRE_AUTH=1` in hosted deployments so unauthenticated
 dashboard routes redirect to `/login` before any project data is loaded under the local fallback identity. The repository
-layer also refuses fallback identity under required auth for direct server-action/data calls; set
+layer also refuses fallback identity under required auth for direct server-action/data calls. Set `FORGE_ALLOWED_EMAILS`
+and/or `FORGE_ALLOWED_EMAIL_DOMAINS` for a private beta invite gate; Forge enforces it before sending magic links and
+again after Supabase token validation. Set
 `FORGE_ALLOW_SERVER_IDENTITY_WHEN_AUTH_REQUIRED=1` only for trusted background jobs that intentionally use env identity.
 
 Project pages use Supabase Realtime for active run, research, opportunity, prototype, build, and reflection status updates

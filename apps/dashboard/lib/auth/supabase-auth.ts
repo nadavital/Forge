@@ -3,6 +3,7 @@ import {
   DEFAULT_AUTH_REFRESH_COOKIE,
   authContextFromBearerToken
 } from "./request-session.ts";
+import { assertEmailAllowed } from "./email-allowlist.ts";
 
 export const AUTH_REFRESH_COOKIE = DEFAULT_AUTH_REFRESH_COOKIE;
 
@@ -49,6 +50,7 @@ export async function requestSupabaseMagicLink(input: {
   if (!email || !email.includes("@")) {
     throw new Error("Enter a valid email address.");
   }
+  assertEmailAllowed(email, env);
 
   const fetcher = input.fetchImpl ?? fetch;
   const response = await fetcher(`${url}/auth/v1/otp`, {
@@ -82,6 +84,7 @@ export async function validatedSessionCookies(input: {
   if (!context) {
     throw new Error("Supabase session token could not be validated.");
   }
+  assertEmailAllowed(context.email, input.env ?? process.env);
   const accessMaxAge = clampSeconds(input.expiresIn, 60, 60 * 60 * 24 * 7) ?? 60 * 60;
   const refreshToken = input.refreshToken?.trim();
   return {

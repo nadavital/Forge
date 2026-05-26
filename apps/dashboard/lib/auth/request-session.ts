@@ -1,3 +1,5 @@
+import { emailAllowed } from "./email-allowlist.ts";
+
 export type RequestAuthContext = {
   provider: "supabase";
   subject: string;
@@ -72,10 +74,12 @@ export async function authContextFromBearerToken(
   const payload = (await response.json()) as { id?: unknown; sub?: unknown; email?: unknown };
   const subject = typeof payload.id === "string" ? payload.id : typeof payload.sub === "string" ? payload.sub : "";
   if (!subject) return null;
+  const email = typeof payload.email === "string" ? payload.email : null;
+  if (!emailAllowed(email, env)) return null;
   return {
     provider: "supabase",
     subject,
-    email: typeof payload.email === "string" ? payload.email : null,
+    email,
     tokenSource: source
   };
 }

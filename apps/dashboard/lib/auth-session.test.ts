@@ -8,6 +8,7 @@ import {
   refreshSupabaseAuthSession,
   refreshTokenFromCookieValue
 } from "./auth/request-session.ts";
+import { EMAIL_NOT_INVITED_MESSAGE, emailAllowed } from "./auth/email-allowlist.ts";
 import { requestSupabaseMagicLink, validatedSessionCookies } from "./auth/supabase-auth.ts";
 
 const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.signature";
@@ -65,6 +66,30 @@ test("request auth validates bearer tokens with Supabase Auth", async () => {
   } finally {
     globalThis.fetch = previousFetch;
   }
+});
+
+test("email allowlist accepts explicit emails and domains only when configured", () => {
+  assert.equal(emailAllowed("owner@example.com", {}), true);
+  assert.equal(emailAllowed("Owner@Example.com", { FORGE_ALLOWED_EMAILS: "owner@example.com" }), true);
+  assert.equal(emailAllowed("founder@forge.dev", { FORGE_ALLOWED_EMAIL_DOMAINS: "forge.dev" }), true);
+  assert.equal(emailAllowed("founder@forge.dev", { FORGE_ALLOWED_EMAIL_DOMAINS: "@forge.dev" }), true);
+  assert.equal(emailAllowed("other@example.com", { FORGE_ALLOWED_EMAILS: "owner@example.com" }), false);
+  assert.equal(emailAllowed(null, { FORGE_ALLOWED_EMAIL_DOMAINS: "forge.dev" }), false);
+});
+
+test("request auth rejects valid Supabase tokens outside the email allowlist", async () => {
+  const context = await authContextFromBearerToken(
+    jwt,
+    "cookie",
+    {
+      SUPABASE_URL: "https://forge.supabase.co/",
+      SUPABASE_ANON_KEY: "anon-key",
+      FORGE_ALLOWED_EMAIL_DOMAINS: "forge.dev"
+    },
+    (async () => Response.json({ id: "auth-user-1", email: "owner@example.com" })) as typeof fetch
+  );
+
+  assert.equal(context, null);
 });
 
 test("request auth can refresh expired Supabase access cookies", async () => {
@@ -177,6 +202,30 @@ test("requesting magic links uses Supabase Auth without exposing service-role cr
   });
 });
 
+test("requesting magic links enforces the hosted email allowlist before calling Supabase", async () => {
+  let called = false;
+
+  await assert.rejects(
+    () =>
+      requestSupabaseMagicLink({
+        email: "other@example.com",
+        redirectTo: "https://forge.example.com/auth/callback",
+        env: {
+          SUPABASE_URL: "https://forge.supabase.co",
+          SUPABASE_ANON_KEY: "anon-key",
+          FORGE_ALLOWED_EMAILS: "owner@example.com"
+        },
+        fetchImpl: (async () => {
+          called = true;
+          return new Response("{}", { status: 200 });
+        }) as typeof fetch
+      }),
+    new Error(EMAIL_NOT_INVITED_MESSAGE)
+  );
+
+  assert.equal(called, false);
+});
+
 test("validated sessions produce httpOnly cookie inputs after Supabase token validation", async () => {
   const previousFetch = globalThis.fetch;
   try {
@@ -197,6 +246,28 @@ test("validated sessions produce httpOnly cookie inputs after Supabase token val
     assert.equal(cookies.access.maxAge, 3600);
     assert.equal(cookies.refresh?.name, "forge_supabase_refresh_token");
     assert.equal(cookies.user.email, "owner@example.com");
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("validated sessions enforce the hosted email allowlist after Supabase token validation", async () => {
+  const previousFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = (async () => Response.json({ id: "auth-user-1", email: "other@example.com" })) as typeof fetch;
+
+    await assert.rejects(
+      () =>
+        validatedSessionCookies({
+          accessToken: jwt,
+          env: {
+            SUPABASE_URL: "https://forge.supabase.co",
+            SUPABASE_ANON_KEY: "anon-key",
+            FORGE_ALLOWED_EMAIL_DOMAINS: "forge.dev"
+          }
+        }),
+      new Error("Supabase session token could not be validated.")
+    );
   } finally {
     globalThis.fetch = previousFetch;
   }

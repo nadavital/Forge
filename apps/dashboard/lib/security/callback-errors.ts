@@ -1,6 +1,7 @@
 type Env = Partial<Record<string, string | undefined>>;
 
 const SAFE_CALLBACK_MESSAGES = new Set([
+  "Email is not invited to this Forge workspace.",
   "Enter a valid email address.",
   "GitHub callback state could not be verified.",
   "Project not found for this GitHub callback.",

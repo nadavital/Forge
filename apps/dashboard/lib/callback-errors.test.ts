@@ -8,6 +8,10 @@ test("callback error messages allow only explicit local validation text", () => 
     "Enter a valid email address."
   );
   assert.equal(
+    callbackSafeErrorMessage(new Error("Email is not invited to this Forge workspace."), "Sign-in link could not be sent."),
+    "Email is not invited to this Forge workspace."
+  );
+  assert.equal(
     callbackSafeErrorMessage(new Error("GitHub token exchange failed: 401 Bad credentials"), "GitHub user authorization could not be saved."),
     "GitHub user authorization could not be saved."
   );

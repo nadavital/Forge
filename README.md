@@ -126,6 +126,8 @@ SUPABASE_ANON_KEY=
 FORGE_AUTH_BEARER_COOKIE=
 FORGE_PUBLIC_APP_URL=
 FORGE_REQUIRE_AUTH=0
+FORGE_ALLOWED_EMAILS=
+FORGE_ALLOWED_EMAIL_DOMAINS=
 FORGE_ALLOW_SERVER_IDENTITY_WHEN_AUTH_REQUIRED=0
 FORGE_TOKEN_ENCRYPTION_KEY=
 FORGE_AUTH_SUBJECT=
@@ -178,7 +180,9 @@ httpOnly Forge session cookies after `/auth/callback` clears the token-bearing U
 fails validation or expires, request-session validation can use the refresh cookie to obtain a fresh access token for that request. Set
 `FORGE_PUBLIC_APP_URL` when the app is behind a proxy or deployed somewhere other than the current request host. Set
 `FORGE_REQUIRE_AUTH=1` for hosted deployments so unauthenticated dashboard requests redirect to `/login` instead of
-falling back to local/server identity. With required auth enabled, repository identity resolution also rejects fallback
+falling back to local/server identity. For private beta deployments, set `FORGE_ALLOWED_EMAILS` and/or
+`FORGE_ALLOWED_EMAIL_DOMAINS`; Forge checks the allowlist before sending magic links and again after Supabase token
+validation so a valid Supabase session cannot bypass the invite gate. With required auth enabled, repository identity resolution also rejects fallback
 identity for direct server-action/data access unless `FORGE_ALLOW_SERVER_IDENTITY_WHEN_AUTH_REQUIRED=1` is explicitly set
 for a trusted background job.
 Project settings render a runtime-readiness panel that shows capability state and missing environment variable names,
